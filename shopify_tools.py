@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import requests
 from dotenv import load_dotenv
@@ -32,7 +33,7 @@ def get_products_context() -> str:
         params = {
             "limit": 250,
             "status": "active",
-            "fields": "id,title,handle,variants,status",
+            "fields": "id,title,handle,variants,status,body_html",
         }
         resp = requests.get(url, headers=_headers(), params=params, timeout=15)
         resp.raise_for_status()
@@ -65,8 +66,14 @@ def get_products_context() -> str:
             else:
                 tallas = "AGOTADO"
 
+            # Descripción limpia (sin HTML, máx 200 chars)
+            raw_desc = p.get("body_html") or ""
+            desc = re.sub(r"<[^>]+>", " ", raw_desc)
+            desc = re.sub(r"\s+", " ", desc).strip()[:200]
+            desc_part = f" | {desc}" if desc else ""
+
             lines.append(
-                f"- {p['title']}: ${price:,.0f} CLP | {tallas} | {product_url}"
+                f"- {p['title']}: ${price:,.0f} CLP | {tallas}{desc_part} | {product_url}"
             )
 
         ctx = "\n".join(lines) if lines else "Catálogo no disponible temporalmente."
