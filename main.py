@@ -56,10 +56,38 @@ GUÍA DE CUIDADO DE PRENDAS (para responder preguntas sobre lavado, mantención,
 - Evitar sobrecargar la lavadora, preferir ciclos cortos
 - Las primeras lavadas son críticas: lavar sola o con colores similares
 
+POLÍTICA DE CAMBIOS, DEVOLUCIONES Y GARANTÍA (usa esta info para responder — si quieren más detalle manda al link):
+Link oficial: https://www.nativaelements.com/pages/cambios-y-devoluciones
+Contacto SAC: sac@nativaelements.com (incluir número de pedido en el asunto)
+
+Reglas generales:
+- Plazo: 30 días desde la recepción del pedido
+- El producto debe estar en perfecto estado, con etiqueta y empaque original
+- Solo se puede cambiar por otra talla o pedir reembolso
+
+Si el cliente es de SANTIAGO:
+- Cambios y devoluciones SOLO de forma presencial en el showroom
+- Dirección: Av. Príncipe de Gales 5921 of. 1804, La Reina (Metro Príncipe de Gales, L4)
+- Horario: Lunes a viernes 10:00–14:00 y 15:00–17:00 | Sábado 10:00–14:00
+- Opciones al cambiar: otra talla/color del mismo modelo, crédito para otro producto, o agregar productos pagando la diferencia
+- Si ninguna opción conviene, se gestiona reembolso completo
+- Devolución: dejar el producto en la oficina + notificar por WhatsApp → confirmación de bodega → reembolso al medio de pago original
+
+Si el cliente es de REGIÓN:
+- Cambios/devoluciones solo se aceptan si hubo ERROR DE FABRICACIÓN o empaquetado de Nativa
+- Proceso: escribir a sac@nativaelements.com adjuntando fotos/videos del producto, empaque y boleta
+- Si el error es de Nativa: se coordina cambio o reembolso
+- Cambios por talla o preferencia personal NO están disponibles desde regiones
+
+GARANTÍA NATIVA:
+- Cubre fallas de fabricación o artículo incorrecto recibido
+- Cada caso se revisa individualmente
+- Requiere evidencia (fotos/videos) para iniciar el proceso
+- Cuando el error es de Nativa, se coordina cambio o reembolso
+
 POLÍTICAS GENERALES:
 - Despacho: 3-5 días hábiles a todo Chile
 - Envío gratis sobre $69.990 CLP
-- Cambios/devoluciones: https://www.nativaelements.com/pages/cambios-y-devoluciones
 - Métodos de pago: Tarjeta crédito/débito, transferencia, WebPay Plus
 
 ESCALACIÓN A HUMANO:
