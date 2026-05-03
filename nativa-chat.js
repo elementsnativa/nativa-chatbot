@@ -15,7 +15,7 @@
   /* ── Estilos ─────────────────────────────────────────────────────────────── */
   var css = `
     #nc-btn {
-      position: fixed; bottom: 24px; right: 24px; z-index: 99999;
+      position: fixed; bottom: 90px; right: 24px; z-index: 99999;
       width: 56px; height: 56px; border-radius: 50%;
       background: ${COLOR}; border: none; cursor: pointer;
       box-shadow: 0 4px 16px rgba(0,0,0,.25);
@@ -26,7 +26,7 @@
     #nc-btn svg { width: 26px; height: 26px; fill: #fff; }
 
     #nc-window {
-      position: fixed; bottom: 92px; right: 24px; z-index: 99998;
+      position: fixed; bottom: 158px; right: 24px; z-index: 99998;
       width: 360px; max-height: 540px;
       background: #fff; border-radius: 16px;
       box-shadow: 0 8px 32px rgba(0,0,0,.18);
@@ -143,8 +143,8 @@
     #nc-send:disabled { opacity: .5; cursor: not-allowed; }
 
     @media (max-width: 420px) {
-      #nc-window { width: calc(100vw - 24px); right: 12px; bottom: 80px; }
-      #nc-btn { right: 12px; bottom: 16px; }
+      #nc-window { width: calc(100vw - 24px); right: 12px; bottom: 148px; }
+      #nc-btn { right: 12px; bottom: 82px; }
     }
   `;
 
