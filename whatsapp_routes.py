@@ -26,7 +26,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from database import get_db
-from main import SYSTEM_PROMPT
+from prompts import SYSTEM_PROMPT
 from shopify_tools import get_products_context
 from whatsapp_client import VERIFY_TOKEN, normalize_phone, send_text
 
