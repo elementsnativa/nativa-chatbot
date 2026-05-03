@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,10 +8,20 @@ from pydantic import BaseModel
 from typing import Optional
 import anthropic
 from shopify_tools import get_products_context
+from cart_recovery import start_recovery_scheduler
+from whatsapp_routes import router as whatsapp_router
 
 load_dotenv()
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app):
+    start_recovery_scheduler()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(whatsapp_router)
 
 app.add_middleware(
     CORSMiddleware,
