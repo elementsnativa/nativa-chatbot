@@ -199,12 +199,29 @@
     msgs.scrollTop = msgs.scrollHeight;
   }
 
+  function renderText(text) {
+    // Escapa HTML para prevenir XSS
+    var escaped = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    // Convierte URLs en links clickeables
+    return escaped.replace(
+      /(https?:\/\/[^\s]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;word-break:break-all;">$1</a>'
+    );
+  }
+
   function addMessage(role, text) {
     var div = document.createElement("div");
     div.className = "nc-msg nc-" + role;
     var bubble = document.createElement("div");
     bubble.className = "nc-bubble";
-    bubble.textContent = text;
+    if (role === "bot") {
+      bubble.innerHTML = renderText(text);
+    } else {
+      bubble.textContent = text;
+    }
     div.appendChild(bubble);
     msgs.appendChild(div);
     scrollDown();
