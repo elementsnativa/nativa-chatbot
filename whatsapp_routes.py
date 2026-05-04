@@ -27,8 +27,8 @@ from fastapi.responses import PlainTextResponse
 
 from database import get_db
 from prompts import SYSTEM_PROMPT
-from shopify_tools import get_products_context
-from whatsapp_client import VERIFY_TOKEN, normalize_phone, send_text
+from shopify_tools import get_product_image, get_products_context
+from whatsapp_client import VERIFY_TOKEN, normalize_phone, send_image, send_text
 
 load_dotenv()
 
@@ -187,6 +187,21 @@ async def whatsapp_incoming(request: Request):
             return {"status": "ok"}
     except (json.JSONDecodeError, TypeError, KeyError):
         pass  # Normal text reply — proceed below
+
+    # ── Send product images if reply mentions specific products ───────────────
+    import re as _re
+    handles_found = _re.findall(r'nativaelements\.com/products/([\w%-]+)', reply)
+    seen_handles: set = set()
+    for handle in handles_found[:2]:  # max 2 images per reply
+        if handle not in seen_handles:
+            img_url = get_product_image(handle)
+            if img_url:
+                try:
+                    send_image(from_phone, img_url)
+                    print(f"[whatsapp_routes] Product image sent for handle '{handle}' to {from_phone}.")
+                except Exception as img_exc:
+                    print(f"[whatsapp_routes] WARNING: could not send image for '{handle}': {img_exc}")
+            seen_handles.add(handle)
 
     # ── Send reply ────────────────────────────────────────────────────────────
     try:

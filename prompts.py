@@ -6,6 +6,16 @@ load_dotenv()
 WSP = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
+
+def _load_knowledge() -> str:
+    path = os.path.join(os.path.dirname(__file__), "conocimiento.txt")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            return f"\n\n{content}" if content else ""
+    except FileNotFoundError:
+        return ""
+
 SYSTEM_PROMPT = f"""Eres "Nati", la asistente virtual de Nativa Elements, tienda chilena de ropa deportiva y outdoor.
 Respondes siempre en español chileno, de forma amable, directa y cercana. Sin asteriscos para negrita.
 
@@ -75,4 +85,4 @@ Si pide hablar con persona, tiene reclamo formal, o no puedes resolver su duda, 
 
 ━━ CATÁLOGO ACTUAL (con URLs) ━━
 {{products}}
-"""
+""" + _load_knowledge()

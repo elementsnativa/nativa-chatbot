@@ -13,6 +13,7 @@ STORE_DOMAIN = "nativaelements.com"
 CACHE_TTL = 1800  # 30 minutos
 
 _cache: dict = {"data": None, "ts": 0}
+_image_map: dict = {}  # handle → first image URL
 
 
 def _headers() -> dict:
@@ -33,15 +34,19 @@ def get_products_context() -> str:
         params = {
             "limit": 250,
             "status": "active",
-            "fields": "id,title,handle,variants,status,body_html",
+            "fields": "id,title,handle,variants,status,body_html,images",
         }
         resp = requests.get(url, headers=_headers(), params=params, timeout=15)
         resp.raise_for_status()
         products = resp.json().get("products", [])
 
+        _image_map.clear()
         lines = []
         for p in products:
             handle = p.get("handle", "")
+            images = p.get("images", [])
+            if images:
+                _image_map[handle] = images[0]["src"]
             product_url = f"https://{STORE_DOMAIN}/products/{handle}"
             variants = p.get("variants", [])
 
@@ -83,3 +88,8 @@ def get_products_context() -> str:
 
     except Exception as e:
         return f"[No se pudo cargar el catálogo: {e}]"
+
+
+def get_product_image(handle: str) -> str | None:
+    """Return the first image URL for a product handle, or None."""
+    return _image_map.get(handle)

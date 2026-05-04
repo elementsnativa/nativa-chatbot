@@ -1,0 +1,17 @@
+━━ INFORMACIÓN ADICIONAL DE LA MARCA ━━
+(Editado por el equipo Nativa — este archivo se actualiza sin tocar código)
+
+SOBRE LA MARCA:
+Nativa Elements es una marca chilena de ropa deportiva y outdoor fundada con el propósito de vestir a quienes viven activamente. Diseño limpio, materiales de calidad y tallas para todos.
+
+PROMOCIONES ACTIVAS:
+(Agrega aquí promociones vigentes, ej: "2x1 en hoodies hasta el 15 de mayo")
+
+PREGUNTAS FRECUENTES DEL EQUIPO:
+(Agrega aquí respuestas a preguntas que el bot no sabe responder bien)
+
+PRODUCTOS DESTACADOS DEL MES:
+(Agrega aquí los productos que quieres que el bot mencione primero)
+
+NOVEDADES:
+(Agrega aquí lanzamientos, colecciones nuevas, colaboraciones)
