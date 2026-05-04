@@ -68,6 +68,8 @@ async def instagram_incoming(request: Request):
     except Exception:
         return {"status": "ok"}
 
+    print(f"[instagram_routes] POST received — object={body.get('object')!r} — raw={str(body)[:300]}")
+
     # Instagram sends object="instagram"; ignore everything else
     if body.get("object") != "instagram":
         return {"status": "ok"}
