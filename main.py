@@ -48,6 +48,20 @@ def health():
     return {"status": "ok", "service": "nativa-chatbot"}
 
 
+@app.get("/data-deletion")
+def data_deletion():
+    from fastapi.responses import HTMLResponse
+    html = """
+    <html><body>
+    <h2>Eliminación de datos de usuario — Nativa Elements</h2>
+    <p>Para solicitar la eliminación de tus datos, contáctanos:</p>
+    <p>Email: <a href="mailto:elements.nativa@gmail.com">elements.nativa@gmail.com</a></p>
+    <p>Eliminaremos tu información en un plazo de 30 días hábiles.</p>
+    </body></html>
+    """
+    return HTMLResponse(content=html)
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     products_ctx = get_products_context()
