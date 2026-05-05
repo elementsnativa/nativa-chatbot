@@ -29,10 +29,10 @@ load_dotenv()
 RECOVERY_DELAY   = 45 * 60       # 45 min → first message
 FOLLOWUP_DELAY   = 24 * 60 * 60  # 24 h  → second message (returning customers)
 
-# Templates (nombres exactos aprobados en Meta)
-TEMPLATE_FIRST_TIME = "antiguo_con_codigo"      # sin compra previa
-TEMPLATE_RETURNING  = "carrito_clientes_nuevo"  # compró al menos una vez
-TEMPLATE_FOLLOWUP   = "cliente_nuevo2_"         # seguimiento 24 h (returning)
+# Templates aprobados en NATIVA ELEMENTS WABA — sin parámetros de body
+TEMPLATE_FIRST_TIME = "msj_1"              # sin compra previa — saludo + oferta ayuda
+TEMPLATE_RETURNING  = "antiguo_con_codigo" # compró antes — 10% OFF RECUPERA10
+TEMPLATE_FOLLOWUP   = "cliente_nuevo2_"   # seguimiento 24h — botón URL {{1}} en button
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -124,16 +124,16 @@ def process_pending_recoveries() -> None:
                         ).fetchone()
 
                         if completed:
-                            # Returning customer — send carrito_clientes_nuevo + schedule follow-up
-                            send_template(phone, TEMPLATE_RETURNING, [first_name, products_text])
+                            # Returning customer — sin parámetros de body
+                            send_template(phone, TEMPLATE_RETURNING, [])
                             db.execute(
                                 "UPDATE abandoned_carts SET status='sent_followup_pending', message_sent_at=? WHERE token=?",
                                 (now, token),
                             )
                             print(f"[cart_recovery] Cart {token}: returning customer template sent to {phone}.")
                         else:
-                            # First-time buyer — send antiguo_con_codigo
-                            send_template(phone, TEMPLATE_FIRST_TIME, [first_name, products_text])
+                            # First-time buyer — sin parámetros de body
+                            send_template(phone, TEMPLATE_FIRST_TIME, [])
                             db.execute(
                                 "UPDATE abandoned_carts SET status='sent', message_sent_at=? WHERE token=?",
                                 (now, token),
@@ -153,7 +153,7 @@ def process_pending_recoveries() -> None:
                 # ── Pass 2: follow-up for returning customers ─────────────
                 followups = db.execute(
                     """
-                    SELECT token, phone, name
+                    SELECT token, phone, name, checkout_url
                     FROM   abandoned_carts
                     WHERE  status = 'sent_followup_pending'
                     AND    message_sent_at < ?
@@ -166,7 +166,10 @@ def process_pending_recoveries() -> None:
                     phone      = row["phone"]
                     first_name = (row["name"] or "").split()[0] or "amig@"
                     try:
-                        send_template(phone, TEMPLATE_FOLLOWUP, [first_name])
+                        # cliente_nuevo2_ tiene botón URL con {{1}} — usamos checkout_url
+                        checkout_url = row["checkout_url"] if "checkout_url" in row.keys() else ""
+                        followup_params = [checkout_url] if checkout_url else []
+                        send_template(phone, TEMPLATE_FOLLOWUP, followup_params)
                         db.execute(
                             "UPDATE abandoned_carts SET status='sent', message_sent_at=? WHERE token=?",
                             (now, token),
