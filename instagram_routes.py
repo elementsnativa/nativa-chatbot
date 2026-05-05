@@ -32,6 +32,9 @@ _anthropic = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
+# After this many seconds without a human reply, the bot resumes automatically
+HUMAN_TAKEOVER_TTL = 24 * 3600  # 24 hours
+
 _IG_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por Instagram Direct. "
     "Respuestas cortas (máx 2-3 líneas). "
@@ -70,7 +73,6 @@ async def instagram_incoming(request: Request):
 
     print(f"[instagram_routes] POST received — object={body.get('object')!r} — raw={str(body)[:300]}")
 
-    # Instagram sends object="instagram"; ignore everything else
     if body.get("object") != "instagram":
         return {"status": "ok"}
 
@@ -80,12 +82,32 @@ async def instagram_incoming(request: Request):
     except (KeyError, IndexError):
         return {"status": "ok"}
 
-    # Ignore echos (messages sent by the page itself)
-    if messaging.get("message", {}).get("is_echo"):
+    message = messaging.get("message", {})
+
+    # ── Human takeover: detect echo (message sent by @nativaelements) ────────
+    if message.get("is_echo"):
+        sender_id: str = messaging["recipient"]["id"]  # the customer's ID
+        db = get_db()
+        try:
+            db.execute(
+                """
+                INSERT INTO instagram_conversations (psid, history, updated_at, human_takeover)
+                VALUES (?, '[]', ?, ?)
+                ON CONFLICT(psid) DO UPDATE SET
+                    human_takeover = excluded.human_takeover,
+                    updated_at     = excluded.updated_at
+                """,
+                (sender_id, time.time(), time.time()),
+            )
+            db.commit()
+            print(f"[instagram_routes] Human takeover activated for {sender_id}.")
+        except Exception as exc:
+            print(f"[instagram_routes] WARNING: could not set human_takeover for {sender_id}: {exc}")
+        finally:
+            db.close()
         return {"status": "ok"}
 
     # Only handle plain-text messages
-    message = messaging.get("message", {})
     if "text" not in message:
         print(f"[instagram_routes] Ignoring non-text message: {list(message.keys())}")
         return {"status": "ok"}
@@ -95,18 +117,26 @@ async def instagram_incoming(request: Request):
 
     print(f"[instagram_routes] Incoming DM from {sender_id}: {user_text[:80]!r}")
 
-    # ── Load conversation history ─────────────────────────────────────────────
+    # ── Load conversation + check human takeover ──────────────────────────────
     db = get_db()
     history: list = []
+    human_takeover: float | None = None
     try:
         row = db.execute(
-            "SELECT history FROM instagram_conversations WHERE psid=?",
+            "SELECT history, human_takeover FROM instagram_conversations WHERE psid=?",
             (sender_id,),
         ).fetchone()
         if row:
             history = json.loads(row["history"] or "[]")
+            human_takeover = row["human_takeover"]
     except Exception as exc:
         print(f"[instagram_routes] WARNING: could not load history for {sender_id}: {exc}")
+
+    # If a human replied within the last 24h, skip bot response
+    if human_takeover and (time.time() - human_takeover) < HUMAN_TAKEOVER_TTL:
+        print(f"[instagram_routes] Human takeover active for {sender_id} — bot skipped.")
+        db.close()
+        return {"status": "ok"}
 
     history = history[-12:]
 
@@ -140,8 +170,8 @@ async def instagram_incoming(request: Request):
     try:
         db.execute(
             """
-            INSERT INTO instagram_conversations (psid, history, updated_at)
-            VALUES (?, ?, ?)
+            INSERT INTO instagram_conversations (psid, history, updated_at, human_takeover)
+            VALUES (?, ?, ?, NULL)
             ON CONFLICT(psid) DO UPDATE SET
                 history    = excluded.history,
                 updated_at = excluded.updated_at

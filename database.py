@@ -60,12 +60,19 @@ def init_db() -> None:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS instagram_conversations (
-                psid        TEXT PRIMARY KEY,
-                history     TEXT NOT NULL DEFAULT '[]',  -- JSON list of messages
-                updated_at  REAL NOT NULL
+                psid            TEXT PRIMARY KEY,
+                history         TEXT NOT NULL DEFAULT '[]',  -- JSON list of messages
+                updated_at      REAL NOT NULL,
+                human_takeover  REAL  -- timestamp of last human reply; NULL = bot active
             )
             """
         )
+        # Migration: add human_takeover if table already exists without it
+        try:
+            cur.execute("ALTER TABLE instagram_conversations ADD COLUMN human_takeover REAL")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
 
         # ── completed_orders ─────────────────────────────────────────────────
         cur.execute(
