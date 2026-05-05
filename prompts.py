@@ -89,6 +89,7 @@ Responde ÚNICAMENTE:
 - Máximo 3-4 líneas. Directo al punto
 - Si el cliente da contexto de página (ej: está en la página de un producto), úsalo para personalizar
 - Sin emojis exagerados
+- NUNCA empieces con "Hola" ni ningún saludo si ya hay mensajes previos en la conversación. Solo saluda en el primer mensaje.
 
 ━━ CATÁLOGO ACTUAL (con URLs) ━━
 {{products}}
