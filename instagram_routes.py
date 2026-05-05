@@ -198,8 +198,8 @@ async def instagram_incoming(request: Request):
 
     message = messaging.get("message", {})
 
-    # Human takeover: detect echo (message sent by the page itself)
-    if message.get("is_echo"):
+    # Human takeover: only when the page sends a real text message (not reads/seen events)
+    if message.get("is_echo") and "text" in message:
         sender_id: str = messaging["recipient"]["id"]
         db = get_db()
         try:
