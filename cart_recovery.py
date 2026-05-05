@@ -20,22 +20,19 @@ import time
 from dotenv import load_dotenv
 
 from database import get_db
-from whatsapp_client import send_text
+from whatsapp_client import send_template
 
 load_dotenv()
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-RECOVERY_DELAY = 45 * 60  # 45 minutes in seconds
+RECOVERY_DELAY   = 45 * 60       # 45 min → first message
+FOLLOWUP_DELAY   = 24 * 60 * 60  # 24 h  → second message (returning customers)
 
-RECOVERY_MSG = (
-    "👋 Hola {name}, soy Nati de Nativa Elements.\n\n"
-    "Vimos que dejaste estos productos en tu carrito:\n"
-    "{products}\n\n"
-    "¿Tienes alguna duda sobre tallas, envío o medios de pago? "
-    "Con gusto te ayudo para que puedas completar tu compra. "
-    "Tu carrito sigue guardado y te esperamos 🙂"
-)
+# Templates (nombres exactos aprobados en Meta)
+TEMPLATE_FIRST_TIME = "antiguo_con_codigo"      # sin compra previa
+TEMPLATE_RETURNING  = "carrito_clientes_nuevo"  # compró al menos una vez
+TEMPLATE_FOLLOWUP   = "cliente_nuevo2_"         # seguimiento 24 h (returning)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,90 +77,104 @@ def format_products(products_json: str) -> str:
 
 def process_pending_recoveries() -> None:
     """
-    Infinite loop that checks for pending abandoned carts every 60 seconds.
-    Designed to run in a background daemon thread.
+    Infinite loop checking abandoned carts every 60 seconds.
+
+    Pass 1 — status='pending', older than 45 min:
+      - No phone → mark no_phone
+      - Returning customer (has completed order) → send TEMPLATE_RETURNING, mark sent_followup_pending
+      - First-time buyer → send TEMPLATE_FIRST_TIME, mark sent
+
+    Pass 2 — status='sent_followup_pending', message_sent_at older than 24 h:
+      - Send TEMPLATE_FOLLOWUP, mark sent
     """
     print("[cart_recovery] Recovery scheduler started.")
 
     while True:
         try:
-            cutoff = time.time() - RECOVERY_DELAY
-            db = get_db()
-
+            now = time.time()
+            db  = get_db()
             try:
-                rows = db.execute(
+                # ── Pass 1: first message ─────────────────────────────────
+                pending = db.execute(
                     """
-                    SELECT token, phone, name, products, checkout_url, total
+                    SELECT token, phone, name, products
                     FROM   abandoned_carts
                     WHERE  status = 'pending'
                     AND    created_at < ?
                     """,
-                    (cutoff,),
+                    (now - RECOVERY_DELAY,),
                 ).fetchall()
 
-                print(f"[cart_recovery] Checking pending carts — found {len(rows)} eligible.")
+                print(f"[cart_recovery] Checking pending carts — found {len(pending)} eligible.")
 
-                for row in rows:
+                for row in pending:
                     token = row["token"]
                     phone = row["phone"]
-                    name = row["name"] or "amig@"
+                    first_name = (row["name"] or "").split()[0] or "amig@"
 
                     try:
-                        # ── No phone on record ─────────────────────────────
                         if not phone:
-                            print(f"[cart_recovery] Cart {token}: no phone, marking no_phone.")
-                            db.execute(
-                                "UPDATE abandoned_carts SET status='no_phone' WHERE token=?",
-                                (token,),
-                            )
+                            db.execute("UPDATE abandoned_carts SET status='no_phone' WHERE token=?", (token,))
                             db.commit()
                             continue
 
-                        # ── Check if order was already completed ───────────
+                        products_text = format_products(row["products"])
                         completed = db.execute(
-                            "SELECT 1 FROM completed_orders WHERE phone=? LIMIT 1",
-                            (phone,),
+                            "SELECT 1 FROM completed_orders WHERE phone=? LIMIT 1", (phone,)
                         ).fetchone()
 
                         if completed:
-                            print(f"[cart_recovery] Cart {token}: phone {phone} already converted.")
+                            # Returning customer — send carrito_clientes_nuevo + schedule follow-up
+                            send_template(phone, TEMPLATE_RETURNING, [first_name, products_text])
                             db.execute(
-                                "UPDATE abandoned_carts SET status='converted' WHERE token=?",
-                                (token,),
+                                "UPDATE abandoned_carts SET status='sent_followup_pending', message_sent_at=? WHERE token=?",
+                                (now, token),
                             )
+                            print(f"[cart_recovery] Cart {token}: returning customer template sent to {phone}.")
+                        else:
+                            # First-time buyer — send antiguo_con_codigo
+                            send_template(phone, TEMPLATE_FIRST_TIME, [first_name, products_text])
+                            db.execute(
+                                "UPDATE abandoned_carts SET status='sent', message_sent_at=? WHERE token=?",
+                                (now, token),
+                            )
+                            print(f"[cart_recovery] Cart {token}: first-time template sent to {phone}.")
+
+                        db.commit()
+
+                    except Exception as exc:
+                        print(f"[cart_recovery] ERROR processing cart {token}: {exc}")
+                        try:
+                            db.execute("UPDATE abandoned_carts SET status='error' WHERE token=?", (token,))
                             db.commit()
-                            continue
+                        except Exception:
+                            pass
 
-                        # ── Send recovery message ──────────────────────────
-                        products_text = format_products(row["products"])
-                        message = RECOVERY_MSG.format(
-                            name=name.split()[0] if name else "amig@",
-                            products=products_text,
-                        )
+                # ── Pass 2: follow-up for returning customers ─────────────
+                followups = db.execute(
+                    """
+                    SELECT token, phone, name
+                    FROM   abandoned_carts
+                    WHERE  status = 'sent_followup_pending'
+                    AND    message_sent_at < ?
+                    """,
+                    (now - FOLLOWUP_DELAY,),
+                ).fetchall()
 
-                        send_text(phone, message)
-
+                for row in followups:
+                    token      = row["token"]
+                    phone      = row["phone"]
+                    first_name = (row["name"] or "").split()[0] or "amig@"
+                    try:
+                        send_template(phone, TEMPLATE_FOLLOWUP, [first_name])
                         db.execute(
-                            """
-                            UPDATE abandoned_carts
-                            SET    status='sent', message_sent_at=?
-                            WHERE  token=?
-                            """,
-                            (time.time(), token),
+                            "UPDATE abandoned_carts SET status='sent', message_sent_at=? WHERE token=?",
+                            (now, token),
                         )
                         db.commit()
-                        print(f"[cart_recovery] Cart {token}: recovery message sent to {phone}.")
-
-                    except Exception as item_exc:
-                        print(f"[cart_recovery] ERROR processing cart {token}: {item_exc}")
-                        try:
-                            db.execute(
-                                "UPDATE abandoned_carts SET status='error' WHERE token=?",
-                                (token,),
-                            )
-                            db.commit()
-                        except Exception as db_exc:
-                            print(f"[cart_recovery] ERROR marking cart {token} as error: {db_exc}")
+                        print(f"[cart_recovery] Cart {token}: follow-up template sent to {phone}.")
+                    except Exception as exc:
+                        print(f"[cart_recovery] ERROR sending follow-up for cart {token}: {exc}")
 
             finally:
                 db.close()

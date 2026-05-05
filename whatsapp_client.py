@@ -68,6 +68,52 @@ def send_text(to: str, text: str) -> dict:
         raise
 
 
+def send_template(to: str, template_name: str, params: list[str], language: str = "es") -> dict:
+    """
+    Send an approved WhatsApp template message (required for business-initiated messages).
+    params: list of body parameter values in order, e.g. ["Esteban", "• Polera M"]
+    """
+    if not WHATSAPP_TOKEN:
+        raise RuntimeError("[whatsapp_client] WHATSAPP_TOKEN is not set")
+    if not PHONE_NUMBER_ID:
+        raise RuntimeError("[whatsapp_client] WHATSAPP_PHONE_ID is not set")
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    components = []
+    if params:
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": p} for p in params],
+        })
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language},
+            "components": components,
+        },
+    }
+
+    try:
+        resp = requests.post(_BASE_URL, json=payload, headers=headers, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        print(f"[whatsapp_client] Template '{template_name}' sent to {to}")
+        return data
+    except requests.HTTPError as exc:
+        print(f"[whatsapp_client] HTTP error sending template to {to}: {exc} — body: {exc.response.text}")
+        raise
+    except Exception as exc:
+        print(f"[whatsapp_client] Unexpected error sending template to {to}: {exc}")
+        raise
+
+
 def send_image(to: str, image_url: str, caption: str = "") -> dict:
     """Send an image message via WhatsApp."""
     if not WHATSAPP_TOKEN:
