@@ -13,6 +13,7 @@ Mount in main.py with:
     app.include_router(whatsapp_router)
 """
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -46,6 +47,10 @@ WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
+DEBOUNCE_SECONDS = 15  # wait this long for more messages before replying
+
+_message_buffer: dict[str, list[str]] = {}
+_pending_tasks: dict[str, asyncio.Task] = {}
 
 # Extra instruction injected into system prompt for WhatsApp replies
 _WA_SYSTEM_SUFFIX = (
@@ -102,68 +107,41 @@ async def whatsapp_verify(
 
 # ── 2. POST /webhook/whatsapp — Incoming WhatsApp messages ───────────────────
 
-@router.post("/webhook/whatsapp")
-async def whatsapp_incoming(request: Request):
-    """
-    Receive and process incoming WhatsApp messages from Meta.
-    Queries Claude (Haiku) with conversation history and sends a reply.
-    Non-text messages (images, audio, etc.) are silently ignored.
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        # Meta sometimes sends malformed bodies during retries; swallow gracefully
-        return {"status": "ok"}
+async def _debounced_reply_wa(phone: str) -> None:
+    """Wait DEBOUNCE_SECONDS, then process all buffered messages for this phone."""
+    await asyncio.sleep(DEBOUNCE_SECONDS)
 
-    try:
-        value = body["entry"][0]["changes"][0]["value"]
-    except (KeyError, IndexError):
-        return {"status": "ok"}
+    buffered = _message_buffer.pop(phone, [])
+    _pending_tasks.pop(phone, None)
 
-    # Ignore status updates and delivery receipts
-    if "messages" not in value:
-        return {"status": "ok"}
+    if not buffered:
+        return
 
-    message = value["messages"][0]
+    user_text = "\n".join(buffered)
+    print(f"[whatsapp_routes] Processing {len(buffered)} buffered message(s) from {phone}.")
 
-    # Only handle plain-text messages
-    if message.get("type") != "text":
-        print(f"[whatsapp_routes] Ignoring non-text message type: {message.get('type')}")
-        return {"status": "ok"}
-
-    from_phone: str = message["from"]
-    user_text: str = message["text"]["body"]
-
-    print(f"[whatsapp_routes] Incoming message from {from_phone}: {user_text[:80]!r}")
-
-    # ── Load conversation history + check human takeover ─────────────────────
     db = get_db()
     history: list = []
     human_takeover: float | None = None
     try:
         row = db.execute(
             "SELECT history, human_takeover FROM whatsapp_conversations WHERE phone=?",
-            (from_phone,),
+            (phone,),
         ).fetchone()
         if row:
             history = json.loads(row["history"] or "[]")
             human_takeover = row["human_takeover"]
     except Exception as exc:
-        print(f"[whatsapp_routes] WARNING: could not load history for {from_phone}: {exc}")
+        print(f"[whatsapp_routes] WARNING: could not load history for {phone}: {exc}")
 
-    # If a human took over within the last 48h, skip bot response
     if human_takeover and (time.time() - human_takeover) < HUMAN_TAKEOVER_TTL:
-        print(f"[whatsapp_routes] Human takeover active for {from_phone} — bot skipped.")
+        print(f"[whatsapp_routes] Human takeover active for {phone} — bot skipped.")
         db.close()
-        return {"status": "ok"}
+        return
 
-    # Keep only the last 12 messages to stay within token limits
-    history = history[-12:]
-
-    # ── Build messages list for Claude ───────────────────────────────────────
+    history = history[-20:]
     messages = history + [{"role": "user", "content": user_text}]
 
-    # ── Build system prompt ───────────────────────────────────────────────────
     try:
         products_ctx = get_products_context()
     except Exception as exc:
@@ -172,7 +150,6 @@ async def whatsapp_incoming(request: Request):
 
     system = SYSTEM_PROMPT.replace("{products}", products_ctx) + _WA_SYSTEM_SUFFIX
 
-    # ── Call Claude ───────────────────────────────────────────────────────────
     try:
         response = _anthropic.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -182,10 +159,9 @@ async def whatsapp_incoming(request: Request):
         )
         reply: str = response.content[0].text.strip()
     except Exception as exc:
-        print(f"[whatsapp_routes] ERROR calling Claude for {from_phone}: {exc}")
+        print(f"[whatsapp_routes] ERROR calling Claude for {phone}: {exc}")
         reply = "Hola, en este momento tenemos un problema técnico. Por favor contáctanos en un momento 🙏"
 
-    # ── Persist updated history ───────────────────────────────────────────────
     updated_history = messages + [{"role": "assistant", "content": reply}]
     try:
         db.execute(
@@ -196,51 +172,85 @@ async def whatsapp_incoming(request: Request):
                 history    = excluded.history,
                 updated_at = excluded.updated_at
             """,
-            (from_phone, json.dumps(updated_history), time.time()),
+            (phone, json.dumps(updated_history), time.time()),
         )
         db.commit()
     except Exception as exc:
-        print(f"[whatsapp_routes] WARNING: could not save history for {from_phone}: {exc}")
+        print(f"[whatsapp_routes] WARNING: could not save history for {phone}: {exc}")
     finally:
         db.close()
 
-    # ── Check for escalation action ───────────────────────────────────────────
     try:
         parsed = json.loads(reply)
         if parsed.get("action") == "escalate":
             escalate_text = (
-                f"{parsed.get('message', 'Te conecto con nuestro equipo:')}\n"
-                f"WhatsApp: +{WSP_CONTACT}\n"
+                f"{parsed.get('message', 'Para hablar con una persona de nuestro equipo, escríbenos a:')}\n"
                 f"Email: {EMAIL_CONTACT}"
             )
-            send_text(from_phone, escalate_text)
-            # Auto-pause bot: human takes over from here
-            _set_whatsapp_takeover(from_phone)
-            print(f"[whatsapp_routes] Escalation sent + human takeover set for {from_phone}.")
-            return {"status": "ok"}
+            send_text(phone, escalate_text)
+            _set_whatsapp_takeover(phone)
+            print(f"[whatsapp_routes] Escalation sent + human takeover set for {phone}.")
+            return
     except (json.JSONDecodeError, TypeError, KeyError):
-        pass  # Normal text reply — proceed below
+        pass
 
-    # ── Send product images if reply mentions specific products ───────────────
     import re as _re
     handles_found = _re.findall(r'nativaelements\.com/products/([\w%-]+)', reply)
     seen_handles: set = set()
-    for handle in handles_found[:2]:  # max 2 images per reply
+    for handle in handles_found[:2]:
         if handle not in seen_handles:
             img_url = get_product_image(handle)
             if img_url:
                 try:
-                    send_image(from_phone, img_url)
-                    print(f"[whatsapp_routes] Product image sent for handle '{handle}' to {from_phone}.")
+                    send_image(phone, img_url)
+                    print(f"[whatsapp_routes] Product image sent for handle '{handle}' to {phone}.")
                 except Exception as img_exc:
                     print(f"[whatsapp_routes] WARNING: could not send image for '{handle}': {img_exc}")
             seen_handles.add(handle)
 
-    # ── Send reply ────────────────────────────────────────────────────────────
     try:
-        send_text(from_phone, reply)
+        send_text(phone, reply)
     except Exception as exc:
-        print(f"[whatsapp_routes] ERROR sending message to {from_phone}: {exc}")
+        print(f"[whatsapp_routes] ERROR sending message to {phone}: {exc}")
+
+
+@router.post("/webhook/whatsapp")
+async def whatsapp_incoming(request: Request):
+    """
+    Receive incoming WhatsApp messages from Meta.
+    Buffers messages per contact and replies once after DEBOUNCE_SECONDS of silence.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "ok"}
+
+    try:
+        value = body["entry"][0]["changes"][0]["value"]
+    except (KeyError, IndexError):
+        return {"status": "ok"}
+
+    if "messages" not in value:
+        return {"status": "ok"}
+
+    message = value["messages"][0]
+
+    if message.get("type") != "text":
+        print(f"[whatsapp_routes] Ignoring non-text message type: {message.get('type')}")
+        return {"status": "ok"}
+
+    from_phone: str = message["from"]
+    user_text: str = message["text"]["body"]
+
+    print(f"[whatsapp_routes] Buffering message from {from_phone}: {user_text[:80]!r}")
+
+    _message_buffer.setdefault(from_phone, []).append(user_text)
+
+    task = _pending_tasks.get(from_phone)
+    if task and not task.done():
+        task.cancel()
+
+    _pending_tasks[from_phone] = asyncio.create_task(_debounced_reply_wa(from_phone))
 
     return {"status": "ok"}
 
