@@ -82,22 +82,23 @@ def send_template(to: str, template_name: str, params: list[str], language: str 
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json",
     }
-    components = []
+    template_payload: dict = {
+        "name": template_name,
+        "language": {"code": language},
+    }
     if params:
-        components.append({
-            "type": "body",
-            "parameters": [{"type": "text", "text": p} for p in params],
-        })
+        template_payload["components"] = [
+            {
+                "type": "body",
+                "parameters": [{"type": "text", "text": p} for p in params],
+            }
+        ]
 
     payload = {
         "messaging_product": "whatsapp",
         "to": to,
         "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"code": language},
-            "components": components,
-        },
+        "template": template_payload,
     }
 
     try:
