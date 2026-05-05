@@ -32,6 +32,7 @@ _anthropic = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
+BOT_RESUME_CODE = os.getenv("BOT_RESUME_CODE", "NATIVA-ON").upper()
 
 # After this many seconds without a human reply, the bot resumes automatically
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
@@ -227,6 +228,22 @@ async def instagram_incoming(request: Request):
 
     sender_id: str = messaging["sender"]["id"]
     user_text: str = message["text"]
+
+    # Resume code: reactivate the bot for this conversation
+    if user_text.strip().upper() == BOT_RESUME_CODE:
+        db = get_db()
+        try:
+            db.execute(
+                "UPDATE instagram_conversations SET human_takeover = NULL WHERE psid = ?",
+                (sender_id,),
+            )
+            db.commit()
+            print(f"[instagram_routes] Bot resumed for {sender_id} via resume code.")
+        except Exception as exc:
+            print(f"[instagram_routes] WARNING: could not resume bot for {sender_id}: {exc}")
+        finally:
+            db.close()
+        return {"status": "ok"}
 
     print(f"[instagram_routes] Buffering message from {sender_id}: {user_text[:80]!r}")
 
