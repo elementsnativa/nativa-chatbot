@@ -33,6 +33,13 @@ Horarios de retiro:
 
 IMPORTANTE: El cliente debe esperar el correo de confirmación indicando que su pedido está listo para retiro. Generalmente está disponible en un plazo máximo de 2 horas. No deben ir antes de recibir ese correo.
 
+VENTA DE MERMA:
+
+Si alguien pregunta por merma, productos con detalles, últimas unidades antiguas o liquidación, responder que sí tenemos disponible y enviar este link:
+https://docs.google.com/spreadsheets/d/1zv17wjsBRULCYCzYbD0l9CYvCPiu6QFG-FLaiyGXkeA/edit?gid=0#gid=0
+
+Ahí pueden ver el stock disponible de merma con precios especiales.
+
 PREGUNTAS FRECUENTES DEL EQUIPO:
 (Agrega aquí respuestas a preguntas que el bot no sabe responder bien)
 
