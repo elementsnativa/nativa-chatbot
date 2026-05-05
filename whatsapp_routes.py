@@ -47,7 +47,7 @@ WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
-DEBOUNCE_SECONDS = 15  # wait this long for more messages before replying
+DEBOUNCE_SECONDS = 10  # wait this long for more messages before replying
 
 _message_buffer: dict[str, list[str]] = {}
 _pending_tasks: dict[str, asyncio.Task] = {}

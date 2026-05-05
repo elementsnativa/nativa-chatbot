@@ -33,10 +33,11 @@ _anthropic = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 BOT_RESUME_CODE = os.getenv("BOT_RESUME_CODE", "NATIVA-ON").upper()
+BOT_RESUME_CONFIRM = "Bot activado ✓"
 
 # After this many seconds without a human reply, the bot resumes automatically
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
-DEBOUNCE_SECONDS = 15
+DEBOUNCE_SECONDS = 10
 
 _message_buffer: dict[str, list[str]] = {}
 _pending_tasks: dict[str, asyncio.Task] = {}
@@ -199,8 +200,11 @@ async def instagram_incoming(request: Request):
 
     message = messaging.get("message", {})
 
-    # Human takeover: only when the page sends a real text message (not reads/seen events)
+    # Human takeover: only when the page sends a real text message (not reads/seen/system events)
     if message.get("is_echo") and "text" in message:
+        # Ignore the confirmation echo sent by the resume code handler
+        if message.get("text", "").strip() == BOT_RESUME_CONFIRM:
+            return {"status": "ok"}
         sender_id: str = messaging["recipient"]["id"]
         db = get_db()
         try:
@@ -243,6 +247,10 @@ async def instagram_incoming(request: Request):
             print(f"[instagram_routes] WARNING: could not resume bot for {sender_id}: {exc}")
         finally:
             db.close()
+        try:
+            send_text(sender_id, BOT_RESUME_CONFIRM)
+        except Exception as exc:
+            print(f"[instagram_routes] WARNING: could not send resume confirmation to {sender_id}: {exc}")
         return {"status": "ok"}
 
     print(f"[instagram_routes] Buffering message from {sender_id}: {user_text[:80]!r}")
