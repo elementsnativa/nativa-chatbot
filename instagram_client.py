@@ -19,9 +19,9 @@ load_dotenv()
 
 INSTAGRAM_PAGE_TOKEN = os.getenv("INSTAGRAM_PAGE_TOKEN")
 VERIFY_TOKEN = os.getenv("INSTAGRAM_VERIFY_TOKEN", "nativa2024secure")
-API_VERSION = "v21.0"
+API_VERSION = "v25.0"
 
-_BASE_URL = f"https://graph.facebook.com/{API_VERSION}/me/messages"
+_BASE_URL = f"https://graph.instagram.com/{API_VERSION}/me/messages"
 
 
 def send_text(recipient_id: str, text: str) -> dict:
