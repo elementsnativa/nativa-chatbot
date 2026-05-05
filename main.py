@@ -9,9 +9,10 @@ from typing import Optional
 import anthropic
 from shopify_tools import get_products_context
 from cart_recovery import start_recovery_scheduler
-from whatsapp_routes import router as whatsapp_router
+from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
 from instagram_routes import router as instagram_router
 from prompts import SYSTEM_PROMPT
+from database import get_db
 
 load_dotenv()
 
@@ -46,6 +47,52 @@ class ChatRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "nativa-chatbot"}
+
+
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "nativa-admin-2024")
+
+
+@app.get("/admin/pause/{channel}/{contact_id}")
+def admin_pause(channel: str, contact_id: str, secret: str = ""):
+    """Pause the bot for a WhatsApp phone or Instagram PSID for 48h."""
+    if secret != ADMIN_SECRET:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Invalid secret")
+    import time
+    db = get_db()
+    if channel == "whatsapp":
+        _set_whatsapp_takeover(contact_id)
+    elif channel == "instagram":
+        db.execute(
+            """
+            INSERT INTO instagram_conversations (psid, history, updated_at, human_takeover)
+            VALUES (?, '[]', ?, ?)
+            ON CONFLICT(psid) DO UPDATE SET
+                human_takeover = excluded.human_takeover,
+                updated_at     = excluded.updated_at
+            """,
+            (contact_id, time.time(), time.time()),
+        )
+        db.commit()
+        db.close()
+    else:
+        return {"error": "channel must be 'whatsapp' or 'instagram'"}
+    return {"status": "paused", "channel": channel, "contact": contact_id, "hours": 48}
+
+
+@app.get("/admin/resume/{channel}/{contact_id}")
+def admin_resume(channel: str, contact_id: str, secret: str = ""):
+    """Resume the bot immediately for a WhatsApp phone or Instagram PSID."""
+    if secret != ADMIN_SECRET:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Invalid secret")
+    db = get_db()
+    table = "whatsapp_conversations" if channel == "whatsapp" else "instagram_conversations"
+    col = "phone" if channel == "whatsapp" else "psid"
+    db.execute(f"UPDATE {table} SET human_takeover = NULL WHERE {col} = ?", (contact_id,))
+    db.commit()
+    db.close()
+    return {"status": "resumed", "channel": channel, "contact": contact_id}
 
 
 @app.get("/data-deletion")

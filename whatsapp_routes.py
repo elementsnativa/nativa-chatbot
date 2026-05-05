@@ -45,6 +45,8 @@ SHOPIFY_API_VERSION = "2025-01"
 WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
+HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
+
 # Extra instruction injected into system prompt for WhatsApp replies
 _WA_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por WhatsApp. "
@@ -54,6 +56,27 @@ _WA_SYSTEM_SUFFIX = (
 )
 
 router = APIRouter()
+
+
+def _set_whatsapp_takeover(phone: str) -> None:
+    """Mark a WhatsApp conversation as human-managed for the next 48h."""
+    db = get_db()
+    try:
+        db.execute(
+            """
+            INSERT INTO whatsapp_conversations (phone, history, updated_at, human_takeover)
+            VALUES (?, '[]', ?, ?)
+            ON CONFLICT(phone) DO UPDATE SET
+                human_takeover = excluded.human_takeover,
+                updated_at     = excluded.updated_at
+            """,
+            (phone, time.time(), time.time()),
+        )
+        db.commit()
+    except Exception as exc:
+        print(f"[whatsapp_routes] WARNING: could not set human_takeover for {phone}: {exc}")
+    finally:
+        db.close()
 
 
 # ── 1. GET /webhook/whatsapp — Meta verification handshake ───────────────────
@@ -113,18 +136,26 @@ async def whatsapp_incoming(request: Request):
 
     print(f"[whatsapp_routes] Incoming message from {from_phone}: {user_text[:80]!r}")
 
-    # ── Load conversation history ─────────────────────────────────────────────
+    # ── Load conversation history + check human takeover ─────────────────────
     db = get_db()
     history: list = []
+    human_takeover: float | None = None
     try:
         row = db.execute(
-            "SELECT history FROM whatsapp_conversations WHERE phone=?",
+            "SELECT history, human_takeover FROM whatsapp_conversations WHERE phone=?",
             (from_phone,),
         ).fetchone()
         if row:
             history = json.loads(row["history"] or "[]")
+            human_takeover = row["human_takeover"]
     except Exception as exc:
         print(f"[whatsapp_routes] WARNING: could not load history for {from_phone}: {exc}")
+
+    # If a human took over within the last 48h, skip bot response
+    if human_takeover and (time.time() - human_takeover) < HUMAN_TAKEOVER_TTL:
+        print(f"[whatsapp_routes] Human takeover active for {from_phone} — bot skipped.")
+        db.close()
+        return {"status": "ok"}
 
     # Keep only the last 12 messages to stay within token limits
     history = history[-12:]
@@ -159,8 +190,8 @@ async def whatsapp_incoming(request: Request):
     try:
         db.execute(
             """
-            INSERT INTO whatsapp_conversations (phone, history, updated_at)
-            VALUES (?, ?, ?)
+            INSERT INTO whatsapp_conversations (phone, history, updated_at, human_takeover)
+            VALUES (?, ?, ?, NULL)
             ON CONFLICT(phone) DO UPDATE SET
                 history    = excluded.history,
                 updated_at = excluded.updated_at
@@ -183,7 +214,9 @@ async def whatsapp_incoming(request: Request):
                 f"Email: {EMAIL_CONTACT}"
             )
             send_text(from_phone, escalate_text)
-            print(f"[whatsapp_routes] Escalation sent to {from_phone}.")
+            # Auto-pause bot: human takes over from here
+            _set_whatsapp_takeover(from_phone)
+            print(f"[whatsapp_routes] Escalation sent + human takeover set for {from_phone}.")
             return {"status": "ok"}
     except (json.JSONDecodeError, TypeError, KeyError):
         pass  # Normal text reply — proceed below

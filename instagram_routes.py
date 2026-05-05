@@ -33,7 +33,7 @@ WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
 # After this many seconds without a human reply, the bot resumes automatically
-HUMAN_TAKEOVER_TTL = 24 * 3600  # 24 hours
+HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
 
 _IG_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por Instagram Direct. "
