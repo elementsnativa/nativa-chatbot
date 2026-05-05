@@ -41,6 +41,7 @@ DEBOUNCE_SECONDS = 10
 
 _message_buffer: dict[str, list[str]] = {}
 _pending_tasks: dict[str, asyncio.Task] = {}
+_bot_sent_mids: set[str] = set()  # mids of messages sent by the bot, to ignore their echoes
 
 _IG_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por Instagram Direct. "
@@ -171,7 +172,12 @@ async def _debounced_reply_ig(psid: str) -> None:
             seen_handles.add(handle)
 
     try:
-        send_text(psid, reply)
+        result = send_text(psid, reply)
+        mid = result.get("message_id")
+        if mid:
+            _bot_sent_mids.add(mid)
+            if len(_bot_sent_mids) > 500:
+                _bot_sent_mids.clear()
     except Exception as exc:
         print(f"[instagram_routes] ERROR sending message to {psid}: {exc}")
 
@@ -200,10 +206,11 @@ async def instagram_incoming(request: Request):
 
     message = messaging.get("message", {})
 
-    # Human takeover: only when the page sends a real text message (not reads/seen/system events)
+    # Human takeover: only when a human from the page sends a message (not the bot's own echoes)
     if message.get("is_echo") and "text" in message:
-        # Ignore the confirmation echo sent by the resume code handler
-        if message.get("text", "").strip() == BOT_RESUME_CONFIRM:
+        # Ignore echoes of messages sent by the bot itself
+        echo_mid = message.get("mid", "")
+        if echo_mid in _bot_sent_mids or message.get("text", "").strip() == BOT_RESUME_CONFIRM:
             return {"status": "ok"}
         sender_id: str = messaging["recipient"]["id"]
         db = get_db()
