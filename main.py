@@ -52,6 +52,69 @@ def health():
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "nativa-admin-2024")
 
 
+@app.get("/admin")
+def admin_panel(secret: str = ""):
+    from fastapi.responses import HTMLResponse
+    if secret != ADMIN_SECRET:
+        return HTMLResponse("<h3>Acceso denegado</h3>", status_code=403)
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nativa — Control del Bot</title>
+  <style>
+    body {{ font-family: sans-serif; max-width: 480px; margin: 40px auto; padding: 0 20px; }}
+    h2 {{ color: #2d6a4f; }}
+    input, select {{ width: 100%; padding: 12px; font-size: 16px; margin: 8px 0 16px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }}
+    button {{ width: 100%; padding: 14px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }}
+    .pause {{ background: #e63946; color: white; }}
+    .resume {{ background: #2d6a4f; color: white; }}
+    .msg {{ padding: 12px; border-radius: 8px; margin-top: 16px; display: none; }}
+    .ok {{ background: #d4edda; color: #155724; }}
+    .err {{ background: #f8d7da; color: #721c24; }}
+  </style>
+</head>
+<body>
+  <h2>🤖 Control del Bot</h2>
+  <p>Pausa el bot antes de escribirle a un cliente desde WhatsApp.</p>
+
+  <label>Canal</label>
+  <select id="channel">
+    <option value="whatsapp">WhatsApp</option>
+    <option value="instagram">Instagram</option>
+  </select>
+
+  <label>Número / ID</label>
+  <input id="contact" type="text" placeholder="56912345678" inputmode="numeric">
+
+  <button class="pause" onclick="action('pause')">⏸ Pausar bot (48h)</button>
+  <button class="resume" onclick="action('resume')">▶ Reanudar bot</button>
+
+  <div id="msg" class="msg"></div>
+
+  <script>
+    async function action(type) {{
+      const ch = document.getElementById('channel').value;
+      const ct = document.getElementById('contact').value.trim();
+      if (!ct) {{ showMsg('Ingresa el número o ID', false); return; }}
+      const url = `/admin/${{type}}/${{ch}}/${{ct}}?secret={ADMIN_SECRET}`;
+      const r = await fetch(url);
+      const d = await r.json();
+      showMsg(r.ok ? (type === 'pause' ? '✅ Bot pausado 48h para ' + ct : '✅ Bot reanudado para ' + ct) : '❌ Error: ' + JSON.stringify(d), r.ok);
+    }}
+    function showMsg(text, ok) {{
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      el.className = 'msg ' + (ok ? 'ok' : 'err');
+      el.style.display = 'block';
+    }}
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
 @app.get("/admin/pause/{channel}/{contact_id}")
 def admin_pause(channel: str, contact_id: str, secret: str = ""):
     """Pause the bot for a WhatsApp phone or Instagram PSID for 48h."""
