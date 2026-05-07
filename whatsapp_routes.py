@@ -144,7 +144,7 @@ async def _debounced_reply_wa(phone: str) -> None:
         db.close()
         return
 
-    history = history[-20:]
+    history = history[-10:]
     messages = history + [{"role": "user", "content": user_text}]
 
     try:
@@ -158,7 +158,7 @@ async def _debounced_reply_wa(phone: str) -> None:
     try:
         response = _anthropic.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=400,
+            max_tokens=300,
             system=system,
             messages=messages,
         )

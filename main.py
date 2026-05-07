@@ -186,11 +186,11 @@ async def chat(req: ChatRequest):
     elif req.page_type == "collection":
         page_ctx = "\n[CONTEXTO: El cliente está explorando una colección de productos. Ayúdalo a encontrar lo que busca.]"
 
-    messages = req.history[-12:] + [{"role": "user", "content": req.message + page_ctx}]
+    messages = req.history[-10:] + [{"role": "user", "content": req.message + page_ctx}]
 
     response = _client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=600,
+        max_tokens=400,
         system=system,
         messages=messages,
     )
