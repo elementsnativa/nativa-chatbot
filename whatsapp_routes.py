@@ -336,9 +336,10 @@ async def shopify_checkout_webhook(request: Request):
     try:
         db.execute(
             """
-            INSERT OR IGNORE INTO abandoned_carts
+            INSERT INTO abandoned_carts
                 (token, phone, name, products, checkout_url, total, created_at, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+            ON CONFLICT (token) DO NOTHING
             """,
             (
                 str(token),

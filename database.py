@@ -1,94 +1,102 @@
 """
-database.py — SQLite database manager for Nativa Elements chatbot.
+database.py — PostgreSQL database manager for Nativa Elements chatbot.
 Tables:
   - abandoned_carts
   - whatsapp_conversations
+  - instagram_conversations
   - completed_orders
 
-DB_PATH defaults to /tmp/nativa_chatbot.db (Railway-compatible).
-init_db() is called automatically at module import.
+Uses DATABASE_URL env var (postgresql://...).
+DBWrapper mimics sqlite3's connection interface so routes need no changes.
 """
 
 import os
-import sqlite3
+import re
 
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = os.getenv("DB_PATH", "/tmp/nativa_chatbot.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+class DBWrapper:
+    """Wraps a psycopg2 connection to match the sqlite3 interface used in routes."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    def execute(self, query: str, params=None):
+        query = query.replace("?", "%s")
+        self._cur.execute(query, params)
+        return self._cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._cur.close()
+        self._conn.close()
+
+
+def _connect() -> psycopg2.extensions.connection:
+    return psycopg2.connect(DATABASE_URL)
 
 
 def init_db() -> None:
-    """Create all tables if they don't exist yet."""
-    print(f"[database] Initializing DB at {DB_PATH}")
-    conn = sqlite3.connect(DB_PATH)
+    print("[database] Initializing PostgreSQL DB")
+    conn = _connect()
     try:
         cur = conn.cursor()
 
-        # ── abandoned_carts ──────────────────────────────────────────────────
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS abandoned_carts (
                 token              TEXT PRIMARY KEY,
                 phone              TEXT,
                 name               TEXT,
-                products           TEXT,          -- JSON list of {title, price}
+                products           TEXT,
                 checkout_url       TEXT,
                 total              TEXT,
-                created_at         REAL NOT NULL,
+                created_at         DOUBLE PRECISION NOT NULL,
                 status             TEXT NOT NULL DEFAULT 'pending',
-                                                  -- pending | sent | converted
-                                                  -- error   | no_phone
-                message_sent_at    REAL
+                message_sent_at    DOUBLE PRECISION
             )
             """
         )
 
-        # ── whatsapp_conversations ───────────────────────────────────────────
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS whatsapp_conversations (
                 phone           TEXT PRIMARY KEY,
-                history         TEXT NOT NULL DEFAULT '[]',  -- JSON list of messages
-                updated_at      REAL NOT NULL,
-                human_takeover  REAL  -- timestamp of last human reply; NULL = bot active
+                history         TEXT NOT NULL DEFAULT '[]',
+                updated_at      DOUBLE PRECISION NOT NULL,
+                human_takeover  DOUBLE PRECISION
             )
             """
         )
-        # Migration: add human_takeover if table already exists without it
-        try:
-            cur.execute("ALTER TABLE whatsapp_conversations ADD COLUMN human_takeover REAL")
-            conn.commit()
-        except Exception:
-            pass  # Column already exists
 
-        # ── instagram_conversations ──────────────────────────────────────────
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS instagram_conversations (
                 psid            TEXT PRIMARY KEY,
-                history         TEXT NOT NULL DEFAULT '[]',  -- JSON list of messages
-                updated_at      REAL NOT NULL,
-                human_takeover  REAL  -- timestamp of last human reply; NULL = bot active
+                history         TEXT NOT NULL DEFAULT '[]',
+                updated_at      DOUBLE PRECISION NOT NULL,
+                human_takeover  DOUBLE PRECISION
             )
             """
         )
-        # Migration: add human_takeover if table already exists without it
-        try:
-            cur.execute("ALTER TABLE instagram_conversations ADD COLUMN human_takeover REAL")
-            conn.commit()
-        except Exception:
-            pass  # Column already exists
 
-        # ── completed_orders ─────────────────────────────────────────────────
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS completed_orders (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                id            BIGSERIAL PRIMARY KEY,
                 email         TEXT,
                 phone         TEXT,
-                completed_at  REAL NOT NULL
+                completed_at  DOUBLE PRECISION NOT NULL
             )
             """
         )
@@ -99,15 +107,12 @@ def init_db() -> None:
         print(f"[database] ERROR during init_db: {exc}")
         raise
     finally:
+        cur.close()
         conn.close()
 
 
-def get_db() -> sqlite3.Connection:
-    """Return an open sqlite3.Connection with row_factory set to Row."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_db() -> DBWrapper:
+    return DBWrapper(_connect())
 
 
-# ── Auto-initialise when the module is imported ──────────────────────────────
 init_db()
