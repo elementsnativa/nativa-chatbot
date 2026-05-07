@@ -47,6 +47,7 @@ WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
+CONVERSATION_TTL   = 48 * 3600  # reset history after 48h of inactivity
 DEBOUNCE_SECONDS = 10  # wait this long for more messages before replying
 
 _message_buffer: dict[str, list[str]] = {}
@@ -125,12 +126,16 @@ async def _debounced_reply_wa(phone: str) -> None:
     human_takeover: float | None = None
     try:
         row = db.execute(
-            "SELECT history, human_takeover FROM whatsapp_conversations WHERE phone=?",
+            "SELECT history, human_takeover, updated_at FROM whatsapp_conversations WHERE phone=?",
             (phone,),
         ).fetchone()
         if row:
-            history = json.loads(row["history"] or "[]")
             human_takeover = row["human_takeover"]
+            if row["updated_at"] and (time.time() - row["updated_at"]) > CONVERSATION_TTL:
+                history = []
+                print(f"[whatsapp_routes] History expired for {phone} — starting fresh.")
+            else:
+                history = json.loads(row["history"] or "[]")
     except Exception as exc:
         print(f"[whatsapp_routes] WARNING: could not load history for {phone}: {exc}")
 

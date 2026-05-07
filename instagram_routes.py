@@ -37,6 +37,7 @@ BOT_RESUME_CONFIRM = "Bot activado ✓"
 
 # After this many seconds without a human reply, the bot resumes automatically
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
+CONVERSATION_TTL   = 48 * 3600  # reset history after 48h of inactivity
 DEBOUNCE_SECONDS = 10
 
 _message_buffer: dict[str, list[str]] = {}
@@ -90,12 +91,16 @@ async def _debounced_reply_ig(psid: str) -> None:
     human_takeover: float | None = None
     try:
         row = db.execute(
-            "SELECT history, human_takeover FROM instagram_conversations WHERE psid=?",
+            "SELECT history, human_takeover, updated_at FROM instagram_conversations WHERE psid=?",
             (psid,),
         ).fetchone()
         if row:
-            history = json.loads(row["history"] or "[]")
             human_takeover = row["human_takeover"]
+            if row["updated_at"] and (time.time() - row["updated_at"]) > CONVERSATION_TTL:
+                history = []
+                print(f"[instagram_routes] History expired for {psid} — starting fresh.")
+            else:
+                history = json.loads(row["history"] or "[]")
     except Exception as exc:
         print(f"[instagram_routes] WARNING: could not load history for {psid}: {exc}")
 
