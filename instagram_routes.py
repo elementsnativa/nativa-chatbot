@@ -163,19 +163,6 @@ async def _debounced_reply_ig(psid: str) -> None:
     except (json.JSONDecodeError, TypeError, KeyError):
         pass
 
-    handles_found = re.findall(r'nativaelements\.com/products/([\w%-]+)', reply)
-    seen_handles: set = set()
-    for handle in handles_found[:2]:
-        if handle not in seen_handles:
-            img_url = get_product_image(handle)
-            if img_url:
-                try:
-                    send_image(psid, img_url)
-                    print(f"[instagram_routes] Product image sent for '{handle}' to {psid}.")
-                except Exception as img_exc:
-                    print(f"[instagram_routes] WARNING: could not send image for '{handle}': {img_exc}")
-            seen_handles.add(handle)
-
     try:
         result = send_text(psid, reply)
         mid = result.get("message_id")
