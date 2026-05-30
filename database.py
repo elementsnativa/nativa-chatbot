@@ -43,7 +43,8 @@ class DBWrapper:
 
 
 def _connect() -> psycopg2.extensions.connection:
-    return psycopg2.connect(DATABASE_URL)
+    url = DATABASE_URL.strip()
+    return psycopg2.connect(url, sslmode="require")
 
 
 def init_db() -> None:
