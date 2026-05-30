@@ -1,55 +1,28 @@
 """
-database.py — PostgreSQL database manager for Nativa Elements chatbot.
+database.py — SQLite database manager for Nativa Elements chatbot.
 Tables:
   - abandoned_carts
   - whatsapp_conversations
   - instagram_conversations
   - completed_orders
 
-Uses DATABASE_URL env var (postgresql://...).
-DBWrapper mimics sqlite3's connection interface so routes need no changes.
+DB_PATH defaults to /tmp/nativa_chatbot.db (Railway-compatible).
+init_db() is called automatically at module import.
 """
 
 import os
-import re
+import sqlite3
 
-import psycopg2
-import psycopg2.extras
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-class DBWrapper:
-    """Wraps a psycopg2 connection to match the sqlite3 interface used in routes."""
-
-    def __init__(self, conn):
-        self._conn = conn
-        self._cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    def execute(self, query: str, params=None):
-        query = query.replace("?", "%s")
-        self._cur.execute(query, params)
-        return self._cur
-
-    def commit(self):
-        self._conn.commit()
-
-    def close(self):
-        self._cur.close()
-        self._conn.close()
-
-
-def _connect() -> psycopg2.extensions.connection:
-    url = DATABASE_URL.strip()
-    return psycopg2.connect(url, sslmode="require")
+DB_PATH = os.getenv("DB_PATH", "/tmp/nativa_chatbot.db")
 
 
 def init_db() -> None:
-    print("[database] Initializing PostgreSQL DB")
-    conn = _connect()
+    print(f"[database] Initializing DB at {DB_PATH}")
+    conn = sqlite3.connect(DB_PATH)
     try:
         cur = conn.cursor()
 
@@ -62,9 +35,9 @@ def init_db() -> None:
                 products           TEXT,
                 checkout_url       TEXT,
                 total              TEXT,
-                created_at         DOUBLE PRECISION NOT NULL,
+                created_at         REAL NOT NULL,
                 status             TEXT NOT NULL DEFAULT 'pending',
-                message_sent_at    DOUBLE PRECISION
+                message_sent_at    REAL
             )
             """
         )
@@ -74,30 +47,40 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS whatsapp_conversations (
                 phone           TEXT PRIMARY KEY,
                 history         TEXT NOT NULL DEFAULT '[]',
-                updated_at      DOUBLE PRECISION NOT NULL,
-                human_takeover  DOUBLE PRECISION
+                updated_at      REAL NOT NULL,
+                human_takeover  REAL
             )
             """
         )
+        try:
+            cur.execute("ALTER TABLE whatsapp_conversations ADD COLUMN human_takeover REAL")
+            conn.commit()
+        except Exception:
+            pass
 
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS instagram_conversations (
                 psid            TEXT PRIMARY KEY,
                 history         TEXT NOT NULL DEFAULT '[]',
-                updated_at      DOUBLE PRECISION NOT NULL,
-                human_takeover  DOUBLE PRECISION
+                updated_at      REAL NOT NULL,
+                human_takeover  REAL
             )
             """
         )
+        try:
+            cur.execute("ALTER TABLE instagram_conversations ADD COLUMN human_takeover REAL")
+            conn.commit()
+        except Exception:
+            pass
 
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS completed_orders (
-                id            BIGSERIAL PRIMARY KEY,
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 email         TEXT,
                 phone         TEXT,
-                completed_at  DOUBLE PRECISION NOT NULL
+                completed_at  REAL NOT NULL
             )
             """
         )
@@ -108,12 +91,13 @@ def init_db() -> None:
         print(f"[database] ERROR during init_db: {exc}")
         raise
     finally:
-        cur.close()
         conn.close()
 
 
-def get_db() -> DBWrapper:
-    return DBWrapper(_connect())
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 init_db()
