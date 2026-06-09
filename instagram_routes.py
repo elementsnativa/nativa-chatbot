@@ -104,7 +104,7 @@ async def _debounced_reply_ig(psid: str) -> None:
     except Exception as exc:
         print(f"[instagram_routes] WARNING: could not load history for {psid}: {exc}")
 
-    if human_takeover and (time.time() - human_takeover) < HUMAN_TAKEOVER_TTL:
+    if human_takeover:
         print(f"[instagram_routes] Human takeover active for {psid} — bot skipped.")
         db.close()
         return

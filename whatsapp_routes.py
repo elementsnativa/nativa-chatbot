@@ -139,7 +139,7 @@ async def _debounced_reply_wa(phone: str) -> None:
     except Exception as exc:
         print(f"[whatsapp_routes] WARNING: could not load history for {phone}: {exc}")
 
-    if human_takeover and (time.time() - human_takeover) < HUMAN_TAKEOVER_TTL:
+    if human_takeover:
         print(f"[whatsapp_routes] Human takeover active for {phone} — bot skipped.")
         db.close()
         return
