@@ -48,7 +48,7 @@ EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
 CONVERSATION_TTL   = 48 * 3600  # reset history after 48h of inactivity
-DEBOUNCE_SECONDS = 10  # wait this long for more messages before replying
+DEBOUNCE_SECONDS = 20  # wait this long for more messages before replying
 
 _message_buffer: dict[str, list[str]] = {}
 _pending_tasks: dict[str, asyncio.Task] = {}
