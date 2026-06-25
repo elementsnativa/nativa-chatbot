@@ -58,7 +58,9 @@ _WA_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por WhatsApp. "
     "Respuestas cortas (máx 2-3 líneas). "
     "Sin markdown. "
-    "Links simples."
+    "Links simples. "
+    "Si tu respuesta supera los 50 caracteres, divídela en dos partes naturales separadas por el texto exacto ' || ' (espacio, dos barras, espacio). "
+    "Solo usa ' || ' una vez por respuesta. No lo uses en respuestas cortas."
 )
 
 router = APIRouter()
@@ -213,10 +215,12 @@ async def _debounced_reply_wa(phone: str) -> None:
                     print(f"[whatsapp_routes] WARNING: could not send image for '{handle}': {img_exc}")
             seen_handles.add(handle)
 
-    try:
-        send_text(phone, reply)
-    except Exception as exc:
-        print(f"[whatsapp_routes] ERROR sending message to {phone}: {exc}")
+    parts = [p.strip() for p in reply.split(" || ", 1) if p.strip()]
+    for part in parts:
+        try:
+            send_text(phone, part)
+        except Exception as exc:
+            print(f"[whatsapp_routes] ERROR sending message to {phone}: {exc}")
 
 
 @router.post("/webhook/whatsapp")
