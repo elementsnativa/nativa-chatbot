@@ -188,11 +188,16 @@ def process_pending_recoveries() -> None:
 
 # ── Scheduler bootstrap ───────────────────────────────────────────────────────
 
+CART_RECOVERY_ENABLED = False
+
 def start_recovery_scheduler() -> None:
     """
     Start the abandoned-cart recovery loop in a background daemon thread.
     Call this once during application startup (e.g. FastAPI lifespan handler).
     """
+    if not CART_RECOVERY_ENABLED:
+        print("[cart_recovery] Scheduler disabled — CART_RECOVERY_ENABLED=False.")
+        return
     thread = threading.Thread(
         target=process_pending_recoveries,
         name="cart-recovery-scheduler",
