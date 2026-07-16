@@ -43,12 +43,16 @@ SHOPIFY_WEBHOOK_SECRET = os.getenv("SHOPIFY_WEBHOOK_SECRET")  # optional HMAC ve
 RAILWAY_PUBLIC_URL = os.getenv("RAILWAY_PUBLIC_URL", "")      # e.g. https://your-app.up.railway.app
 SHOPIFY_API_VERSION = "2025-01"
 
-WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
 HUMAN_TAKEOVER_TTL = 48 * 3600  # 48 hours
 CONVERSATION_TTL   = 48 * 3600  # reset history after 48h of inactivity
 DEBOUNCE_SECONDS = 20  # wait this long for more messages before replying
+
+# Conversational AI bot disabled for the WhatsApp channel — incoming messages
+# are acknowledged to Meta but get no automated reply. Abandoned-cart recovery
+# templates (cart_recovery.py) are unaffected and keep sending.
+WHATSAPP_BOT_ENABLED = False
 
 _message_buffer: dict[str, list[str]] = {}
 _pending_tasks: dict[str, asyncio.Task] = {}
@@ -229,6 +233,9 @@ async def whatsapp_incoming(request: Request):
     Receive incoming WhatsApp messages from Meta.
     Buffers messages per contact and replies once after DEBOUNCE_SECONDS of silence.
     """
+    if not WHATSAPP_BOT_ENABLED:
+        return {"status": "ok"}
+
     try:
         body = await request.json()
     except Exception:

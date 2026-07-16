@@ -30,7 +30,6 @@ load_dotenv()
 
 _anthropic = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-WSP_CONTACT = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL_CONTACT = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 BOT_RESUME_CODE = os.getenv("BOT_RESUME_CODE", "NATIVA-ON").upper()
 BOT_RESUME_CONFIRM = "Bot activado ✓"

@@ -203,7 +203,6 @@ async def chat(req: ChatRequest):
             return {
                 "reply": parsed["message"],
                 "action": "escalate",
-                "wsp": parsed["wsp"],
                 "email": parsed["email"],
             }
     except (json.JSONDecodeError, KeyError):

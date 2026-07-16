@@ -110,7 +110,6 @@ def process_pending_recoveries() -> None:
                 for row in pending:
                     token = row["token"]
                     phone = row["phone"]
-                    first_name = (row["name"] or "").split()[0] or "amig@"
 
                     try:
                         if not phone:
@@ -164,7 +163,6 @@ def process_pending_recoveries() -> None:
                 for row in followups:
                     token      = row["token"]
                     phone      = row["phone"]
-                    first_name = (row["name"] or "").split()[0] or "amig@"
                     try:
                         # cliente_nuevo2_ tiene botón URL con {{1}} — usamos checkout_url
                         checkout_url = row["checkout_url"] if "checkout_url" in row.keys() else ""

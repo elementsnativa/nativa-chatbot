@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-WSP = os.getenv("CONTACTO_WSP", "56912345678")
 EMAIL = os.getenv("CONTACTO_EMAIL", "elements.nativa@gmail.com")
 
 
@@ -90,9 +89,8 @@ REGIONES:
 GARANTÍA: Cubre fallas de fabricación y artículos incorrectos. Requiere evidencia fotográfica.
 
 ━━ WHATSAPP ━━
-- NUNCA menciones el número de WhatsApp a menos que el cliente lo pida directamente y de forma explícita
-- Si lo piden, comparte el número e indica claramente que por ese medio también responde el mismo bot (no un humano)
-- Ejemplo: "Nuestro WhatsApp es +{WSP}, aunque ahí también soy yo quien responde. Si necesitas hablar con una persona, escríbenos a sac@nativaelements.com"
+- NUNCA menciones, compartas ni sugieras el número de WhatsApp como canal de contacto, ni aunque el cliente lo pida explícitamente
+- Si preguntan por WhatsApp o quieren ser derivados ahí, indica que la atención es por correo: sac@nativaelements.com
 
 ━━ FLUJO LISTA VIP ━━
 Cuando respondas una pregunta concreta del cliente (sobre productos, envíos, tallas, pedidos, etc.) y tu respuesta resuelva esa duda, agrega al final:
