@@ -188,7 +188,24 @@ def process_pending_recoveries() -> None:
 
 # ── Scheduler bootstrap ───────────────────────────────────────────────────────
 
-CART_RECOVERY_ENABLED = False
+CART_RECOVERY_ENABLED = True
+
+
+def _skip_accumulated_pending() -> None:
+    """Mark all currently-pending carts as 'skipped' so they are never sent.
+    Called once at startup to flush the backlog without sending messages."""
+    db = get_db()
+    try:
+        result = db.execute(
+            "UPDATE abandoned_carts SET status='skipped' WHERE status='pending'"
+        )
+        db.commit()
+        print(f"[cart_recovery] Skipped {result.rowcount} accumulated pending cart(s).")
+    except Exception as exc:
+        print(f"[cart_recovery] WARNING: could not skip pending carts: {exc}")
+    finally:
+        db.close()
+
 
 def start_recovery_scheduler() -> None:
     """
@@ -198,6 +215,7 @@ def start_recovery_scheduler() -> None:
     if not CART_RECOVERY_ENABLED:
         print("[cart_recovery] Scheduler disabled — CART_RECOVERY_ENABLED=False.")
         return
+    _skip_accumulated_pending()
     thread = threading.Thread(
         target=process_pending_recoveries,
         name="cart-recovery-scheduler",
