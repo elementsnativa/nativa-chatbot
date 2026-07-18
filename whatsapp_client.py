@@ -68,10 +68,17 @@ def send_text(to: str, text: str) -> dict:
         raise
 
 
-def send_template(to: str, template_name: str, params: list[str], language: str = "es") -> dict:
+def send_template(
+    to: str,
+    template_name: str,
+    params: list[str],
+    language: str = "es",
+    button_params: list[str] | None = None,
+) -> dict:
     """
     Send an approved WhatsApp template message (required for business-initiated messages).
     params: list of body parameter values in order, e.g. ["Esteban", "• Polera M"]
+    button_params: list of URL button parameter values (one per button, in order)
     """
     if not WHATSAPP_TOKEN:
         raise RuntimeError("[whatsapp_client] WHATSAPP_TOKEN is not set")
@@ -86,13 +93,22 @@ def send_template(to: str, template_name: str, params: list[str], language: str 
         "name": template_name,
         "language": {"code": language},
     }
+    components = []
     if params:
-        template_payload["components"] = [
-            {
-                "type": "body",
-                "parameters": [{"type": "text", "text": p} for p in params],
-            }
-        ]
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": p} for p in params],
+        })
+    if button_params:
+        for i, url in enumerate(button_params):
+            components.append({
+                "type": "button",
+                "sub_type": "url",
+                "index": str(i),
+                "parameters": [{"type": "text", "text": url}],
+            })
+    if components:
+        template_payload["components"] = components
 
     payload = {
         "messaging_product": "whatsapp",
