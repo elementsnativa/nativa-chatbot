@@ -203,6 +203,10 @@ async def instagram_incoming(request: Request):
         echo_mid = message.get("mid", "")
         if echo_mid in _bot_sent_mids or message.get("text", "").strip() == BOT_RESUME_CONFIRM:
             return {"status": "ok"}
+        # Ignore automated echoes responding to story replies (e.g. ManyChat flows)
+        if message.get("reply_to", {}).get("story"):
+            print(f"[instagram_routes] Ignoring story-reply echo — skipping takeover.")
+            return {"status": "ok"}
         customer_psid: str = messaging["recipient"]["id"]
         # Admin resume code typed from the page side — reactivate bot
         if message.get("text", "").strip().upper() == BOT_RESUME_CODE:
