@@ -203,7 +203,22 @@ async def instagram_incoming(request: Request):
         echo_mid = message.get("mid", "")
         if echo_mid in _bot_sent_mids or message.get("text", "").strip() == BOT_RESUME_CONFIRM:
             return {"status": "ok"}
-        sender_id: str = messaging["recipient"]["id"]
+        customer_psid: str = messaging["recipient"]["id"]
+        # Admin resume code typed from the page side — reactivate bot
+        if message.get("text", "").strip().upper() == BOT_RESUME_CODE:
+            db = get_db()
+            try:
+                db.execute(
+                    "UPDATE instagram_conversations SET human_takeover = NULL WHERE psid = ?",
+                    (customer_psid,),
+                )
+                db.commit()
+                print(f"[instagram_routes] Bot resumed for {customer_psid} via admin echo code.")
+            except Exception as exc:
+                print(f"[instagram_routes] WARNING: could not resume bot for {customer_psid}: {exc}")
+            finally:
+                db.close()
+            return {"status": "ok"}
         db = get_db()
         try:
             db.execute(
@@ -214,12 +229,12 @@ async def instagram_incoming(request: Request):
                     human_takeover = excluded.human_takeover,
                     updated_at     = excluded.updated_at
                 """,
-                (sender_id, time.time(), time.time()),
+                (customer_psid, time.time(), time.time()),
             )
             db.commit()
-            print(f"[instagram_routes] Human takeover activated for {sender_id}.")
+            print(f"[instagram_routes] Human takeover activated for {customer_psid}.")
         except Exception as exc:
-            print(f"[instagram_routes] WARNING: could not set human_takeover for {sender_id}: {exc}")
+            print(f"[instagram_routes] WARNING: could not set human_takeover for {customer_psid}: {exc}")
         finally:
             db.close()
         return {"status": "ok"}
