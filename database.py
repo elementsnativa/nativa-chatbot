@@ -100,6 +100,44 @@ def init_db() -> None:
             """
         )
 
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ig_flows (
+                id           BIGSERIAL PRIMARY KEY,
+                name         TEXT NOT NULL,
+                trigger_type TEXT NOT NULL,
+                trigger_value TEXT NOT NULL DEFAULT '*',
+                message      TEXT NOT NULL,
+                active       BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at   DOUBLE PRECISION NOT NULL,
+                updated_at   DOUBLE PRECISION NOT NULL
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bot_config (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at DOUBLE PRECISION NOT NULL
+            )
+            """
+        )
+
+        # Default cart recovery templates
+        cur.execute(
+            """
+            INSERT INTO bot_config (key, value, updated_at)
+            VALUES
+                ('cart_template_first',     'msj_1',                %s),
+                ('cart_template_returning', 'antiguo_con_codigo',   %s),
+                ('cart_template_followup',  'cliente_nuevo2_',      %s)
+            ON CONFLICT (key) DO NOTHING
+            """,
+            (0.0, 0.0, 0.0),
+        )
+
         conn.commit()
         print("[database] Tables ready.")
     except Exception as exc:

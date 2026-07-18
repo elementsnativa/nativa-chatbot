@@ -11,6 +11,7 @@ from shopify_tools import get_products_context
 from cart_recovery import start_recovery_scheduler
 from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
 from instagram_routes import router as instagram_router
+from dashboard import router as dashboard_router
 from prompts import SYSTEM_PROMPT
 from database import get_db
 
@@ -26,6 +27,7 @@ async def lifespan(app):
 app = FastAPI(lifespan=lifespan)
 app.include_router(whatsapp_router)
 app.include_router(instagram_router)
+app.include_router(dashboard_router)
 
 app.add_middleware(
     CORSMiddleware,
