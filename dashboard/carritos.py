@@ -1,7 +1,9 @@
 """Carritos tab — cart recovery stats + template config."""
 
+import os
 import time
 
+import requests
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -9,6 +11,47 @@ from ._shared import _auth
 from database import get_db
 
 router = APIRouter()
+
+
+@router.get("/api/dashboard/waba-templates")
+def get_waba_templates(secret: str = ""):
+    _auth(secret)
+    waba_id = os.getenv("WHATSAPP_WABA_ID", "").strip()
+    token   = os.getenv("WHATSAPP_TOKEN", "").strip()
+    if not waba_id:
+        return {"error": "Falta la variable WHATSAPP_WABA_ID en Railway", "templates": []}
+    if not token:
+        return {"error": "Falta la variable WHATSAPP_TOKEN en Railway", "templates": []}
+    try:
+        resp = requests.get(
+            f"https://graph.facebook.com/v21.0/{waba_id}/message_templates",
+            params={"access_token": token, "fields": "name,status,language,components", "limit": 100},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        templates = []
+        for t in resp.json().get("data", []):
+            preview, has_button, button_url_example = "", False, ""
+            for comp in t.get("components", []):
+                if comp["type"] == "BODY":
+                    preview = comp.get("text", "")
+                if comp["type"] == "BUTTONS":
+                    has_button = True
+                    for btn in comp.get("buttons", []):
+                        if btn.get("type") == "URL":
+                            button_url_example = btn.get("url", "")
+            templates.append({
+                "name": t["name"],
+                "status": t.get("status", ""),
+                "language": t.get("language", ""),
+                "preview": preview,
+                "has_button": has_button,
+                "button_url_example": button_url_example,
+            })
+        templates.sort(key=lambda x: (x["status"] != "APPROVED", x["name"]))
+        return {"templates": templates}
+    except requests.HTTPError as exc:
+        return {"error": f"Error Meta API: {exc.response.text}", "templates": []}
 
 
 @router.get("/api/dashboard/cart-stats")

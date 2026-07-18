@@ -243,18 +243,31 @@ input:checked + .slider:before { transform: translateX(16px); }
       <div class="stat-card"><div class="stat-num" id="stat-total">—</div><div class="stat-label">Total</div></div>
     </div>
 
+    <!-- Templates disponibles -->
     <div class="card mt-16">
-      <div class="card-title">Templates de WhatsApp activos</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div class="card-title" style="margin:0;">Templates disponibles en Meta</div>
+        <button class="btn btn-outline btn-sm" onclick="loadWabaTemplates()">↻ Recargar</button>
+      </div>
+      <div id="tpl-error-banner" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:7px;padding:10px 14px;font-size:12px;margin-bottom:12px;"></div>
+      <div id="tpl-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
+        <div class="empty">Cargando templates...</div>
+      </div>
+    </div>
+
+    <!-- Configuración activa -->
+    <div class="card mt-16">
+      <div class="card-title">Configuración activa del bot</div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">
-        Los nombres deben coincidir exactamente con los templates aprobados en tu cuenta de WhatsApp Business en Meta.
+        Haz clic en "Usar" en cualquier template de arriba, o escribe el nombre manualmente.
       </p>
       <div class="form-row">
         <div class="field">
-          <label>Primer mensaje (cliente nuevo)</label>
+          <label>Primer mensaje — cliente nuevo (45 min)</label>
           <input id="tpl-first" type="text" placeholder="msj_1">
         </div>
         <div class="field">
-          <label>Cliente frecuente</label>
+          <label>Cliente frecuente (45 min)</label>
           <input id="tpl-returning" type="text" placeholder="antiguo_con_codigo">
         </div>
       </div>
@@ -262,7 +275,7 @@ input:checked + .slider:before { transform: translateX(16px); }
         <label>Seguimiento 24h</label>
         <input id="tpl-followup" type="text" placeholder="cliente_nuevo2_">
       </div>
-      <button class="btn btn-primary mt-16" onclick="saveCartConfig()">Guardar templates</button>
+      <button class="btn btn-primary mt-16" onclick="saveCartConfig()">Guardar configuración</button>
     </div>
 
     <div class="card mt-16">
@@ -304,7 +317,7 @@ function switchTab(name) {
   event.target.classList.add('active');
   if (name === 'chatbot') { loadKnowledge(); loadPrompt(); }
   if (name === 'flows') loadFlows();
-  if (name === 'carritos') { loadCartStats(); loadCartConfig(); }
+  if (name === 'carritos') { loadCartStats(); loadCartConfig(); loadWabaTemplates(); }
 }
 
 // ── Tab 1: Chatbot ────────────────────────────────────────────────────────────
@@ -439,6 +452,8 @@ function deleteFlow(id) {
 }
 
 // ── Tab 3: Carritos ───────────────────────────────────────────────────────────
+let _activeConfig = {};
+
 function loadCartStats() {
   api('/api/dashboard/cart-stats').then(d => {
     document.getElementById('stat-pending').textContent   = d.pending.toLocaleString();
@@ -451,10 +466,50 @@ function loadCartStats() {
 }
 function loadCartConfig() {
   api('/api/dashboard/cart-config').then(d => {
+    _activeConfig = d;
     document.getElementById('tpl-first').value     = d.cart_template_first || '';
     document.getElementById('tpl-returning').value = d.cart_template_returning || '';
     document.getElementById('tpl-followup').value  = d.cart_template_followup || '';
   });
+}
+function loadWabaTemplates() {
+  const container = document.getElementById('tpl-cards');
+  const banner    = document.getElementById('tpl-error-banner');
+  container.innerHTML = '<div class="empty">Cargando...</div>';
+  banner.style.display = 'none';
+  api('/api/dashboard/waba-templates').then(d => {
+    if (d.error) {
+      banner.style.display = 'block';
+      banner.textContent = '⚠ ' + d.error + (d.error.includes('WHATSAPP_WABA_ID') ? ' — Agrégala en Railway → Variables.' : '');
+      container.innerHTML = '';
+      return;
+    }
+    if (!d.templates.length) { container.innerHTML = '<div class="empty">No hay templates.</div>'; return; }
+    const activeNames = Object.values(_activeConfig);
+    container.innerHTML = d.templates.map(t => {
+      const isActive = activeNames.includes(t.name);
+      const statusColor = t.status === 'APPROVED' ? 'var(--green)' : t.status === 'REJECTED' ? 'var(--red)' : 'var(--yellow)';
+      const statusLabel = t.status === 'APPROVED' ? 'Aprobado' : t.status === 'REJECTED' ? 'Rechazado' : 'Pendiente';
+      const previewText = t.preview ? escHtml(t.preview.substring(0, 140)) + (t.preview.length > 140 ? '…' : '') : '<em>Sin cuerpo</em>';
+      const btnIcon = t.has_button ? ' 🔗' : '';
+      return `<div style="border:2px solid ${isActive ? 'var(--green)' : 'var(--border)'};border-radius:var(--radius);padding:14px;background:var(--card);position:relative;">
+        ${isActive ? '<div style="position:absolute;top:8px;right:8px;background:var(--green);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;">ACTIVO</div>' : ''}
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${escHtml(t.name)}${btnIcon}</div>
+        <div style="font-size:11px;color:${statusColor};font-weight:600;margin-bottom:8px;">${statusLabel} · ${t.language}</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px;">${previewText}</div>
+        ${t.status === 'APPROVED' ? `<div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" onclick="assignTemplate('${escHtml(t.name)}','first')">Usar: nuevo</button>
+          <button class="btn btn-outline btn-sm" onclick="assignTemplate('${escHtml(t.name)}','returning')">Usar: frecuente</button>
+          <button class="btn btn-outline btn-sm" onclick="assignTemplate('${escHtml(t.name)}','followup')">Usar: 24h</button>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+  }).catch(() => toast('Error cargando templates', true));
+}
+function assignTemplate(name, slot) {
+  const map = {first: 'tpl-first', returning: 'tpl-returning', followup: 'tpl-followup'};
+  document.getElementById(map[slot]).value = name;
+  toast(`"${name}" asignado — guarda la configuración para aplicar.`);
 }
 function saveCartConfig() {
   const body = {
@@ -469,7 +524,8 @@ function saveCartConfig() {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(body)
-  }).then(() => toast('Templates guardados ✓')).catch(() => toast('Error al guardar', true));
+  }).then(() => { toast('Templates guardados ✓'); loadCartConfig(); loadWabaTemplates(); })
+    .catch(() => toast('Error al guardar', true));
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
