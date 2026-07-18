@@ -164,10 +164,7 @@ def process_pending_recoveries() -> None:
                     token      = row["token"]
                     phone      = row["phone"]
                     try:
-                        # cliente_nuevo2_ tiene botón URL con {{1}} — usamos checkout_url
-                        checkout_url = row["checkout_url"] if "checkout_url" in row.keys() else ""
-                        followup_params = [checkout_url] if checkout_url else []
-                        send_template(phone, TEMPLATE_FOLLOWUP, followup_params)
+                        send_template(phone, TEMPLATE_FOLLOWUP, [])
                         db.execute(
                             "UPDATE abandoned_carts SET status='sent', message_sent_at=? WHERE token=?",
                             (now, token),
