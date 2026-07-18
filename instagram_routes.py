@@ -243,6 +243,11 @@ async def instagram_incoming(request: Request):
         print(f"[instagram_routes] Ignoring non-text message: {list(message.keys())}")
         return {"status": "ok"}
 
+    # Ignore story replies — bot doesn't respond but conversation stays active
+    if message.get("reply_to", {}).get("story"):
+        print(f"[instagram_routes] Ignoring story reply from {messaging['sender']['id']}.")
+        return {"status": "ok"}
+
     sender_id: str = messaging["sender"]["id"]
     user_text: str = message["text"]
 
