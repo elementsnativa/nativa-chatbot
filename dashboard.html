@@ -479,8 +479,15 @@ function loadWabaTemplates() {
   banner.style.display = 'none';
   api('/api/dashboard/waba-templates').then(d => {
     if (d.error) {
-      banner.style.display = 'block';
-      banner.textContent = '⚠ ' + d.error + (d.error.includes('WHATSAPP_WABA_ID') ? ' — Agrégala en Railway → Variables.' : '');
+      // Show which phone number the bot uses so the user can find the right WABA
+      api('/api/dashboard/phone-info').then(p => {
+        const phone = p.display_phone_number ? ` El bot usa el número <strong>${p.display_phone_number}</strong> (${p.verified_name || ''}) — busca ese número en tus 7 cuentas de Meta para encontrar el WABA ID correcto, luego agrégalo como <code>WHATSAPP_WABA_ID</code> en Railway.` : '';
+        banner.innerHTML = '⚠ ' + d.error + phone;
+        banner.style.display = 'block';
+      }).catch(() => {
+        banner.textContent = '⚠ ' + d.error;
+        banner.style.display = 'block';
+      });
       container.innerHTML = '';
       return;
     }

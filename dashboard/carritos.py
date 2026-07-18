@@ -50,6 +50,25 @@ def _resolve_waba_id(token: str) -> str:
     return ""
 
 
+@router.get("/api/dashboard/phone-info")
+def get_phone_info(secret: str = ""):
+    _auth(secret)
+    token    = os.getenv("WHATSAPP_TOKEN", "").strip()
+    phone_id = os.getenv("WHATSAPP_PHONE_ID", "").strip()
+    if not token or not phone_id:
+        return {"error": "Faltan variables WHATSAPP_TOKEN o WHATSAPP_PHONE_ID"}
+    try:
+        r = requests.get(
+            f"https://graph.facebook.com/v21.0/{phone_id}",
+            params={"access_token": token, "fields": "id,display_phone_number,verified_name"},
+            timeout=8,
+        )
+        r.raise_for_status()
+        return r.json()
+    except requests.HTTPError as exc:
+        return {"error": exc.response.text}
+
+
 @router.get("/api/dashboard/waba-templates")
 def get_waba_templates(secret: str = ""):
     _auth(secret)
