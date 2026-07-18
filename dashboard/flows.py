@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from dashboard._shared import _auth
+from ._shared import _auth
 from database import get_db
 
 router = APIRouter()

@@ -16,8 +16,8 @@ import os
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
-from dashboard._shared import ADMIN_SECRET
-from dashboard import chatbot, flows, carritos
+from ._shared import ADMIN_SECRET
+from . import chatbot, flows, carritos
 
 router = APIRouter()
 

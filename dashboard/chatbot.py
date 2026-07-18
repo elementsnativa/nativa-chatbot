@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from dashboard._shared import _auth
+from ._shared import _auth
 
 router = APIRouter()
 KNOWLEDGE_PATH = os.path.join(os.path.dirname(__file__), "..", "conocimiento.txt")
