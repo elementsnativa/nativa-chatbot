@@ -21,6 +21,20 @@ def _resolve_waba_id(token: str) -> str:
     phone_id = os.getenv("WHATSAPP_PHONE_ID", "").strip()
     if not phone_id:
         return ""
+    # Attempt 1: edge /whatsapp_business_account on the phone node
+    try:
+        r = requests.get(
+            f"https://graph.facebook.com/v21.0/{phone_id}/whatsapp_business_account",
+            params={"access_token": token, "fields": "id"},
+            timeout=8,
+        )
+        if r.ok:
+            wid = r.json().get("id", "")
+            if wid:
+                return wid
+    except Exception:
+        pass
+    # Attempt 2: account_id field on the phone node
     try:
         r = requests.get(
             f"https://graph.facebook.com/v21.0/{phone_id}",
@@ -28,7 +42,9 @@ def _resolve_waba_id(token: str) -> str:
             timeout=8,
         )
         if r.ok:
-            return r.json().get("account_id", "")
+            wid = r.json().get("account_id", "")
+            if wid:
+                return wid
     except Exception:
         pass
     return ""
