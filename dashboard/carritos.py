@@ -13,15 +13,39 @@ from database import get_db
 router = APIRouter()
 
 
+def _resolve_waba_id(token: str) -> str:
+    """Try to auto-detect WABA ID from the phone number ID already in env."""
+    waba_id = os.getenv("WHATSAPP_WABA_ID", "").strip()
+    if waba_id:
+        return waba_id
+    phone_id = os.getenv("WHATSAPP_PHONE_ID", "").strip()
+    if not phone_id:
+        return ""
+    try:
+        r = requests.get(
+            f"https://graph.facebook.com/v21.0/{phone_id}",
+            params={"access_token": token, "fields": "id,account_id"},
+            timeout=8,
+        )
+        if r.ok:
+            return r.json().get("account_id", "")
+    except Exception:
+        pass
+    return ""
+
+
 @router.get("/api/dashboard/waba-templates")
 def get_waba_templates(secret: str = ""):
     _auth(secret)
-    waba_id = os.getenv("WHATSAPP_WABA_ID", "").strip()
-    token   = os.getenv("WHATSAPP_TOKEN", "").strip()
-    if not waba_id:
-        return {"error": "Falta la variable WHATSAPP_WABA_ID en Railway", "templates": []}
+    token = os.getenv("WHATSAPP_TOKEN", "").strip()
     if not token:
         return {"error": "Falta la variable WHATSAPP_TOKEN en Railway", "templates": []}
+    waba_id = _resolve_waba_id(token)
+    if not waba_id:
+        return {
+            "error": "No se pudo detectar el WABA ID automáticamente. Agrega WHATSAPP_WABA_ID en Railway (Meta Business Suite → Configuración → Cuentas de WhatsApp → ID de cuenta).",
+            "templates": [],
+        }
     try:
         resp = requests.get(
             f"https://graph.facebook.com/v21.0/{waba_id}/message_templates",
