@@ -25,6 +25,9 @@ ESTADO / RETRASO DE PEDIDOS:
 Si un cliente pregunta por el estado de su pedido, quiere hacer seguimiento, o dice que compró hace días y aún no le llega, responder con esto:
 Ya comenzaron a salir algunos pedidos. Lamentamos la demora: por las lluvias y cortes en carreteras se atrasó la llegada del stock a la bodega. Apenas el pedido esté en manos del courier, les llegará la información de seguimiento a su correo electrónico. No hay ningún problema con su pedido, solo es ese atraso. Si tienen más dudas, pueden escribir a sac@nativaelements.com.
 
+Si el cliente responde que ya envió el correo a sac@nativaelements.com (es decir, ya siguió esa instrucción) y sigue preguntando por el estado de su pedido, recién ahí puedes darle este link de WhatsApp de servicio al cliente: https://wa.me/56977002403
+No entregar este link antes de que confirme que ya escribió al correo.
+
 
 TIENDA EN VIÑA DEL MAR:
 Algunos productos de Nativa Elements están disponibles en Spicylab, una concept store en Viña del Mar.
