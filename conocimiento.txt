@@ -21,6 +21,10 @@ Otras comunas de la RM y regiones: despacho vía Bluexpress.
 
 Seguimiento Bluexpress: enviar correo a sac@nativaelements.com con asunto "consulta pedido #NTVAxxxx" (reemplazar las x por el número de pedido que aparece en el correo de confirmación de compra).
 
+ESTADO / RETRASO DE PEDIDOS:
+Si un cliente pregunta por el estado de su pedido, quiere hacer seguimiento, o dice que compró hace días y aún no le llega, responder con esto:
+Ya comenzaron a salir algunos pedidos. Lamentamos la demora: por las lluvias y cortes en carreteras se atrasó la llegada del stock a la bodega. Apenas el pedido esté en manos del courier, les llegará la información de seguimiento a su correo electrónico. No hay ningún problema con su pedido, solo es ese atraso. Si tienen más dudas, pueden escribir a sac@nativaelements.com.
+
 
 TIENDA EN VIÑA DEL MAR:
 Algunos productos de Nativa Elements están disponibles en Spicylab, una concept store en Viña del Mar.
@@ -38,9 +42,13 @@ Horarios de retiro:
 - Lunes a viernes: 10:00–14:00 y 15:00–17:00
 - Sábado: 10:00–14:00
 
-IMPORTANTE: El cliente debe esperar nuestro correo de confirmación indicando que su pedido está listo para retiro. No deben ir antes de recibir ese correo.
+IMPORTANTE: Para retirar pedidos en tienda, el cliente SI O SI debe esperar nuestro correo de confirmación de "listo para retiro". No deben ir antes de recibir ese correo, sin excepción.
 
-⚠️ RETIROS EN TIENDA: El showroom está en remodelación. Los retiros en tienda están disponibles a partir del miércoles 22 de julio. Si alguien pregunta cuándo puede retirar, indicarle que desde el miércoles 22 y que debe esperar el correo de confirmación antes de ir.
+VISITAS SIN COMPRA ONLINE: Si el cliente pregunta por ir a comprar directamente a la tienda o quiere ver los productos en persona pero no ha comprado online, indicarle que el showroom volverá a abrir a todo público a partir del lunes 27 de julio.
+
+⚠️ RETIROS EN TIENDA (info anterior, NO mencionar esta fecha): El showroom está en remodelación. Los retiros en tienda están disponibles a partir del miércoles 22 de julio.
+
+⚠️ RETIROS EN TIENDA (ACTUALIZADO - usar esta info): El showroom está cerrado hasta el jueves 23 de julio. Los retiros en tienda están disponibles a partir del jueves 23. Si alguien pregunta cuándo puede retirar, indicarle que desde el jueves 23 y que debe esperar el correo de confirmación antes de ir.
 
 BAÑO: El showroom cuenta con baño disponible para clientes. Solo mencionarlo si alguien lo pregunta directamente.
 
