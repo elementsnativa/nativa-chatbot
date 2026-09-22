@@ -9,6 +9,7 @@ from typing import Optional
 import anthropic
 from shopify_tools import get_products_context
 from cart_recovery import start_recovery_scheduler
+from instagram_client import start_token_refresh_scheduler
 from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
 from instagram_routes import router as instagram_router
 from dashboard import router as dashboard_router
@@ -21,6 +22,7 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app):
     start_recovery_scheduler()
+    start_token_refresh_scheduler()
     yield
 
 
