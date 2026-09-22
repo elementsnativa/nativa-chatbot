@@ -41,7 +41,10 @@ DEBOUNCE_SECONDS = 10
 
 _message_buffer: dict[str, list[str]] = {}
 _pending_tasks: dict[str, asyncio.Task] = {}
-_bot_sent_mids: set[str] = set()  # mids of messages sent by the bot, to ignore their echoes
+# mids of messages sent by the bot, to ignore their echoes.
+# Insertion-ordered dict used as a bounded set: only the oldest entries are dropped.
+_bot_sent_mids: dict[str, None] = {}
+MAX_SENT_MIDS = 500
 
 _IG_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por Instagram Direct. "
@@ -51,6 +54,43 @@ _IG_SYSTEM_SUFFIX = (
 )
 
 router = APIRouter()
+
+
+def _is_own_echo(psid: str, text: str) -> bool:
+    """True if *text* matches the last message the bot sent to *psid*.
+
+    _bot_sent_mids only lives in memory, so after a restart the bot stops
+    recognizing the echoes of its own messages and would mistake them for a
+    human reply — silencing itself. The stored history survives restarts,
+    so fall back to it.
+    """
+    if not text:
+        return False
+
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT history FROM instagram_conversations WHERE psid=?",
+            (psid,),
+        ).fetchone()
+    except Exception as exc:
+        print(f"[instagram_routes] WARNING: could not check echo for {psid}: {exc}")
+        return False
+    finally:
+        db.close()
+
+    if not row:
+        return False
+
+    try:
+        history = json.loads(row["history"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+    for msg in reversed(history):
+        if msg.get("role") == "assistant":
+            return (msg.get("content") or "").strip() == text
+    return False
 
 
 # ── 1. GET /webhook/instagram — Meta verification handshake ─────────────────
@@ -104,9 +144,20 @@ async def _debounced_reply_ig(psid: str) -> None:
         print(f"[instagram_routes] WARNING: could not load history for {psid}: {exc}")
 
     if human_takeover:
-        print(f"[instagram_routes] Human takeover active for {psid} — bot skipped.")
-        db.close()
-        return
+        if (time.time() - human_takeover) < HUMAN_TAKEOVER_TTL:
+            print(f"[instagram_routes] Human takeover active for {psid} — bot skipped.")
+            db.close()
+            return
+        # Takeover expired — the bot takes the conversation back
+        print(f"[instagram_routes] Human takeover expired for {psid} — bot resuming.")
+        try:
+            db.execute(
+                "UPDATE instagram_conversations SET human_takeover = NULL WHERE psid = ?",
+                (psid,),
+            )
+            db.commit()
+        except Exception as exc:
+            print(f"[instagram_routes] WARNING: could not clear expired takeover for {psid}: {exc}")
 
     history = history[-10:]
     messages = history + [{"role": "user", "content": user_text}]
@@ -166,9 +217,9 @@ async def _debounced_reply_ig(psid: str) -> None:
         result = send_text(psid, reply)
         mid = result.get("message_id")
         if mid:
-            _bot_sent_mids.add(mid)
-            if len(_bot_sent_mids) > 500:
-                _bot_sent_mids.clear()
+            _bot_sent_mids[mid] = None
+            while len(_bot_sent_mids) > MAX_SENT_MIDS:
+                _bot_sent_mids.pop(next(iter(_bot_sent_mids)))
     except Exception as exc:
         print(f"[instagram_routes] ERROR sending message to {psid}: {exc}")
 
@@ -201,15 +252,20 @@ async def instagram_incoming(request: Request):
     if message.get("is_echo") and "text" in message:
         # Ignore echoes of messages sent by the bot itself
         echo_mid = message.get("mid", "")
-        if echo_mid in _bot_sent_mids or message.get("text", "").strip() == BOT_RESUME_CONFIRM:
+        echo_text = message.get("text", "").strip()
+        customer_psid: str = messaging["recipient"]["id"]
+        if echo_mid in _bot_sent_mids or echo_text == BOT_RESUME_CONFIRM:
+            return {"status": "ok"}
+        # After a restart the mid set is empty — compare against stored history
+        if _is_own_echo(customer_psid, echo_text):
+            print(f"[instagram_routes] Echo of the bot's own message to {customer_psid} — skipping takeover.")
             return {"status": "ok"}
         # Ignore automated echoes responding to story replies (e.g. ManyChat flows)
         if message.get("reply_to", {}).get("story"):
             print(f"[instagram_routes] Ignoring story-reply echo — skipping takeover.")
             return {"status": "ok"}
-        customer_psid: str = messaging["recipient"]["id"]
         # Admin resume code typed from the page side — reactivate bot
-        if message.get("text", "").strip().upper() == BOT_RESUME_CODE:
+        if echo_text.upper() == BOT_RESUME_CODE:
             db = get_db()
             try:
                 db.execute(
