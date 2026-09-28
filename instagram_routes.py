@@ -23,7 +23,7 @@ from fastapi.responses import PlainTextResponse
 
 from database import get_db
 from instagram_client import VERIFY_TOKEN, send_image, send_text
-from prompts import SYSTEM_PROMPT
+from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
 from shopify_tools import get_product_image, get_products_context
 
 load_dotenv()
@@ -205,7 +205,8 @@ async def _debounced_reply_ig(psid: str) -> None:
         if parsed.get("action") == "escalate":
             escalate_text = (
                 f"{parsed.get('message', 'Para hablar con una persona de nuestro equipo, escríbenos a:')}\n"
-                f"Email: {EMAIL_CONTACT}"
+                f"Email: {EMAIL_CONTACT}\n"
+                f"WhatsApp: {WHATSAPP_CONTACT} (puede tardar más en ser contestado)"
             )
             send_text(psid, escalate_text)
             print(f"[instagram_routes] Escalation sent to {psid}.")

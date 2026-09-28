@@ -13,7 +13,7 @@ from instagram_client import start_token_refresh_scheduler
 from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
 from instagram_routes import router as instagram_router
 from dashboard import router as dashboard_router
-from prompts import SYSTEM_PROMPT
+from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
 from database import get_db
 
 load_dotenv()
@@ -208,6 +208,7 @@ async def chat(req: ChatRequest):
                 "reply": parsed["message"],
                 "action": "escalate",
                 "email": parsed["email"],
+                "whatsapp": WHATSAPP_CONTACT,
             }
     except (json.JSONDecodeError, KeyError):
         pass
