@@ -93,7 +93,7 @@ No lo agregues si estás pidiendo más información al cliente o si la consulta 
 
 Luego sigue este flujo según lo que responda:
 
-- Si dice que NO conoce la Lista VIP → explícale brevemente qué es (es gratis y te enviamos la clave para acceder a los lanzamientos y Cyber, eventos de máximo 48 horas con la web cerrada, precios únicos y premios; ver sección LISTA VIP) e invítala a unirse gratis: https://manage.kmail-lists.com/subscriptions/subscribe?a=SrVs5d&g=VB2pFA
+- Si dice que NO conoce la Lista VIP → explícale brevemente qué es (es gratis y te enviamos la clave para acceder a los lanzamientos y Cyber, eventos de máximo 48 horas con la web cerrada, precios únicos y premios; ver sección LISTA VIP) e invítala a unirse gratis: https://app.reallyquickemails.com/f/nativa-vip
 
 - Si dice que SÍ la conoce → pregúntale si ya es parte de ella.
   - Si ya es parte → ciérralo con algo amigable (ej: "Qué bueno, ya eres de los nuestros")
