@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 import anthropic
 from shopify_tools import get_products_context
+from order_lookup import create_with_order_tool
 from cart_recovery import start_recovery_scheduler
 from instagram_client import start_token_refresh_scheduler
 from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
@@ -192,14 +193,13 @@ async def chat(req: ChatRequest):
 
     messages = req.history[-10:] + [{"role": "user", "content": req.message + page_ctx}]
 
-    response = _client.messages.create(
+    reply = create_with_order_tool(
+        _client,
         model="claude-haiku-4-5-20251001",
         max_tokens=400,
         system=system,
         messages=messages,
     )
-
-    reply = response.content[0].text.strip()
 
     try:
         parsed = json.loads(reply)

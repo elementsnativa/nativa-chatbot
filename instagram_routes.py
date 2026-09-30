@@ -25,6 +25,7 @@ from database import get_db
 from instagram_client import VERIFY_TOKEN, send_image, send_text
 from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
 from shopify_tools import get_product_image, get_products_context
+from order_lookup import create_with_order_tool
 
 load_dotenv()
 
@@ -171,13 +172,13 @@ async def _debounced_reply_ig(psid: str) -> None:
     system = SYSTEM_PROMPT.replace("{products}", products_ctx) + _IG_SYSTEM_SUFFIX
 
     try:
-        response = _anthropic.messages.create(
+        reply: str = create_with_order_tool(
+            _anthropic,
             model="claude-haiku-4-5-20251001",
             max_tokens=300,
             system=system,
             messages=messages,
         )
-        reply: str = response.content[0].text.strip()
     except Exception as exc:
         print(f"[instagram_routes] ERROR calling Claude for {psid}: {exc}")
         reply = "Hola, en este momento tenemos un problema técnico. Por favor escríbenos en un momento 🙏"
