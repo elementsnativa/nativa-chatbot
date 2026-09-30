@@ -113,13 +113,18 @@ def lookup_order(numero_pedido: str, nombre: str, today: date | None = None) -> 
         limite = add_business_days(created, CYBER_BUSINESS_DAYS)
         result["plazo_despacho_hasta"] = limite.isoformat()
         result["dentro_del_plazo"] = today <= limite
-    tracking = [
-        url
-        for f in order.get("fulfillments") or []
-        for url in (f.get("tracking_urls") or [])
-    ]
-    if tracking:
-        result["seguimiento"] = tracking[0]
+    fulfillments = [f for f in order.get("fulfillments") or [] if f.get("status") != "cancelled"]
+    if fulfillments:
+        latest = max(fulfillments, key=lambda f: f.get("created_at") or "")
+        result["fecha_despacho"] = datetime.fromisoformat(latest["created_at"]).date().isoformat()
+        numbers = latest.get("tracking_numbers") or []
+        urls = latest.get("tracking_urls") or []
+        if numbers:
+            result["numero_seguimiento_bluexpress"] = numbers[0]
+        if urls:
+            result["link_seguimiento"] = urls[0]
+        elif numbers:
+            result["link_seguimiento"] = f"https://www.bluex.cl/seguimiento/?n_seguimiento={numbers[0]}"
     return result
 
 
