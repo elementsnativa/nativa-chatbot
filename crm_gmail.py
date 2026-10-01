@@ -30,11 +30,15 @@ SAC_ADDRESS = os.getenv("GMAIL_SAC_ADDRESS", "sac@nativaelements.com").lower()
 POLL_INTERVAL = 60
 _API = "https://gmail.googleapis.com/gmail/v1/users/me"
 _SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
-# Remitentes automáticos que no son clientes
-_IGNORE_SENDERS = re.compile(
-    r"(no-?reply|mailer-daemon|notifications?@|shopify\.com|bluex|facebookmail|google\.com|instagram\.com)",
+# Remitentes y destinatarios automáticos o de proveedores: no son clientes
+_IGNORE_ADDRESSES = re.compile(
+    r"(no[-_]?reply|mailer|daemon|notificaci|notifications?@|news@|newsletter|@bx\.cl|blue\.cl|bluex|"
+    r"shopify|apple\.com|google\.com|facebookmail|instagram\.com|meta\.com|shopplaza|klaviyo|mercadopago|"
+    r"transbank|flow\.cl|getnet|webpay|canva|notion|slack|linkedin|tiktok|reversso|accounts@|security@)",
     re.I,
 )
+# Solo bandeja y enviados; sin chats, promociones, redes ni notificaciones automáticas
+_QUERY = "-in:chats -in:drafts -category:promotions -category:social -category:updates -category:forums"
 
 _credentials = None
 
@@ -117,40 +121,76 @@ def _attachments(payload: dict) -> list:
     return found
 
 
+def _list_ids(query: str, limit: int | None = None) -> list[str]:
+    """Ids de mensajes que calzan con la búsqueda, del más antiguo al más nuevo."""
+    ids: list[str] = []
+    token = None
+    while True:
+        page = _get("messages", q=query, includeSpamTrash="false", maxResults=500,
+                    **({"pageToken": token} if token else {}))
+        ids += [m["id"] for m in page.get("messages", [])]
+        token = page.get("nextPageToken")
+        if not token or (limit and len(ids) >= limit):
+            break
+    return list(reversed(ids))
+
+
+def _ingest_message(message_id: str) -> bool:
+    """Registra un correo en el CRM. False si se descarta (automático o iniciado por SAC)."""
+    msg = _get(f"messages/{message_id}", format="full")
+    labels = set(msg.get("labelIds", []))
+    if "DRAFT" in labels:
+        return False
+    sender_name, sender = parseaddr(_header(msg, "From"))
+    sender = sender.lower()
+    sent_at = datetime.fromtimestamp(int(msg["internalDate"]) / 1000, tz=timezone.utc)
+    subject = _header(msg, "Subject")
+
+    if sender == SAC_ADDRESS or "SENT" in labels:
+        _, to_addr = parseaddr(_header(msg, "To"))
+        # Solo cuenta como respuesta si el cliente escribió primero en ese hilo
+        if _IGNORE_ADDRESSES.search(to_addr) or not crm.thread_exists("email", msg["threadId"]):
+            return False
+        author, customer = "agente", {"email": to_addr.lower()}
+    else:
+        if _IGNORE_ADDRESSES.search(sender):
+            return False
+        author, customer = "cliente", {"email": sender, "name": sender_name or None}
+
+    return bool(crm.ingest(
+        "email", msg["threadId"], author, _plain_text(msg.get("payload", {})),
+        external_id=f"gmail:{msg['id']}",
+        sent_at=sent_at,
+        author_email=SAC_ADDRESS if author == "agente" else None,
+        customer=customer,
+        subject=subject,
+        needs_human=True,  # el correo no lo atiende el bot
+        attachments=_attachments(msg.get("payload", {})),
+    ))
+
+
 def poll_gmail() -> int:
     """Trae los correos de los últimos 2 días que aún no estén en el CRM."""
-    listing = _get("messages", q="newer_than:2d -in:chats -category:promotions -category:social",
-                   includeSpamTrash="false", maxResults=100)
-    ingested = 0
-    for ref in reversed(listing.get("messages", [])):  # del más antiguo al más nuevo
-        msg = _get(f"messages/{ref['id']}", format="full")
-        labels = set(msg.get("labelIds", []))
-        sender_name, sender = parseaddr(_header(msg, "From"))
-        sender = sender.lower()
-        sent_at = datetime.fromtimestamp(int(msg["internalDate"]) / 1000, tz=timezone.utc)
-        subject = _header(msg, "Subject")
+    ids = _list_ids(f"newer_than:2d {_QUERY}", limit=500)
+    new = [i for i in ids if not crm.message_exists(f"gmail:{i}")]
+    return sum(_ingest_message(i) for i in new)
 
-        if sender == SAC_ADDRESS or "SENT" in labels:
-            _, to_addr = parseaddr(_header(msg, "To"))
-            author, customer = "agente", {"email": to_addr.lower()}
-        else:
-            if _IGNORE_SENDERS.search(sender):
-                continue
-            author, customer = "cliente", {"email": sender, "name": sender_name or None}
 
-        ticket_id = crm.ingest(
-            "email", msg["threadId"], author, _plain_text(msg.get("payload", {})),
-            external_id=f"gmail:{msg['id']}",
-            sent_at=sent_at,
-            author_email=SAC_ADDRESS if author == "agente" else None,
-            customer=customer,
-            subject=subject,
-            needs_human=True,  # el correo no lo atiende el bot
-            attachments=_attachments(msg.get("payload", {})),
-        )
-        if ticket_id:
-            ingested += 1
-    return ingested
+def import_history(days: int = 180, close_after_days: int = 7) -> dict:
+    """Importa el historial de sac@ y cierra las conversaciones antiguas con su fecha real."""
+    ids = _list_ids(f"newer_than:{days}d {_QUERY}")
+    pending = [i for i in ids if not crm.message_exists(f"gmail:{i}")]
+    print(f"[crm_gmail] Importing {len(pending)} of {len(ids)} messages from the last {days} days.")
+    imported = 0
+    for n, message_id in enumerate(pending, 1):
+        try:
+            imported += _ingest_message(message_id)
+        except Exception as exc:
+            print(f"[crm_gmail] WARNING: could not import {message_id}: {exc}")
+        if n % 200 == 0:
+            print(f"[crm_gmail] {n}/{len(pending)} processed, {imported} imported.")
+    closed = crm.close_stale("email", close_after_days)
+    return {"messages": len(ids), "imported": imported, "closed": closed}
 
 
 def send_reply(thread_id: str, text: str) -> str:

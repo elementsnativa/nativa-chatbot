@@ -105,6 +105,67 @@ def ingest(
         return None
 
 
+def _query_one(sql: str, params: tuple):
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def thread_exists(channel: str, thread_key: str) -> bool:
+    return enabled() and _query_one(
+        "SELECT 1 FROM tickets WHERE channel = %s::crm_channel AND thread_key = %s LIMIT 1", (channel, thread_key)
+    ) is not None
+
+
+def message_exists(external_id: str) -> bool:
+    return enabled() and _query_one("SELECT 1 FROM messages WHERE external_id = %s", (external_id,)) is not None
+
+
+def close_stale(channel: str, older_than_days: int) -> int:
+    """Cierra conversaciones importadas sin actividad, con la fecha real del último mensaje."""
+    conn = _connect()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT set_config('crm.actor', 'sistema', true)")
+            cur.execute(
+                """
+                UPDATE tickets SET status = 'cerrado'
+                WHERE channel = %s::crm_channel AND status <> 'cerrado'
+                  AND last_message_at < now() - make_interval(days => %s)
+                RETURNING id
+                """,
+                (channel, older_than_days),
+            )
+            ids = [r[0] for r in cur.fetchall()]
+            if ids:
+                # El trigger usa now(); se reemplaza por el momento real del último mensaje
+                cur.execute(
+                    """
+                    UPDATE tickets SET
+                        resolved_at = COALESCE(last_agent_msg_at, last_message_at),
+                        closed_at = last_message_at,
+                        first_resolved_at = COALESCE(last_agent_msg_at, last_message_at)
+                    WHERE id = ANY(%s)
+                    """,
+                    (ids,),
+                )
+                cur.execute(
+                    """
+                    UPDATE ticket_events e SET created_at = COALESCE(t.last_agent_msg_at, t.last_message_at)
+                    FROM tickets t
+                    WHERE e.ticket_id = t.id AND t.id = ANY(%s) AND e.type = 'status' AND e.to_value = 'cerrado'
+                    """,
+                    (ids,),
+                )
+            return len(ids)
+    finally:
+        conn.close()
+
+
 def mark_needs_human(channel: str, thread_key: str) -> None:
     """El bot escaló o la conversación está en manos humanas: empieza a correr el SLA."""
     if not enabled() or not thread_key:
@@ -214,12 +275,12 @@ def classify_pending() -> int:
             cur.execute(
                 """
                 SELECT id FROM tickets
-                WHERE status NOT IN ('cerrado')
+                WHERE (status <> 'cerrado' OR ai_classified_at IS NULL)
                   AND NOT handled_by_bot_only
                   AND last_customer_msg_at IS NOT NULL
                   AND last_customer_msg_at < now() - make_interval(secs => %s)
                   AND (ai_classified_at IS NULL OR ai_classified_at < last_message_at)
-                ORDER BY last_customer_msg_at
+                ORDER BY (status = 'cerrado'), last_customer_msg_at DESC
                 LIMIT 20
                 """,
                 (CLASSIFY_QUIET_SECONDS,),
