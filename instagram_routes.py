@@ -22,6 +22,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
 import crm
+import crm_media
 from database import get_db
 from instagram_client import VERIFY_TOKEN, get_profile, send_image, send_text
 from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
@@ -354,8 +355,7 @@ async def instagram_incoming(request: Request):
             sent_at=(messaging.get("timestamp") or time.time() * 1000) / 1000,
             customer={"instagram_psid": sender, "name": profile.get("name"),
                       "instagram_username": profile.get("username")},
-            attachments=[{"type": a.get("type"), "url": (a.get("payload") or {}).get("url")}
-                         for a in message.get("attachments") or []],
+            attachments=await asyncio.to_thread(crm_media.instagram_attachments, message),
         )
 
     if "text" not in message:

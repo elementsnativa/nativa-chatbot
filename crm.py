@@ -30,7 +30,7 @@ import anthropic
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 load_dotenv()
@@ -451,6 +451,19 @@ def crm_send(req: SendRequest, x_crm_secret: str | None = Header(default=None)):
         finally:
             conn.close()
     return {"status": "sent"}
+
+
+@router.get("/crm/gmail-attachment")
+def crm_gmail_attachment(message_id: str, attachment_id: str, mime: str = "application/octet-stream",
+                         x_crm_secret: str | None = Header(default=None)):
+    """Entrega un adjunto de Gmail a la web del CRM (se pide a Gmail cuando se abre)."""
+    _check_secret(x_crm_secret)
+    from crm_gmail import get_attachment
+    try:
+        data = get_attachment(message_id, attachment_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No se pudo leer el adjunto: {exc}")
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=86400"})
 
 
 class InsightRequest(BaseModel):

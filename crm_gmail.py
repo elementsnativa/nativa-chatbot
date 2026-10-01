@@ -108,12 +108,14 @@ def _strip_quoted(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
-def _attachments(payload: dict) -> list:
+def _attachments(payload: dict, message_id: str = "") -> list:
     found = []
 
     def walk(part):
         if part.get("filename"):
-            found.append({"name": part["filename"], "mime": part.get("mimeType")})
+            body = part.get("body") or {}
+            found.append({"name": part["filename"], "mime": part.get("mimeType"), "size": body.get("size"),
+                          "gmail_message": message_id, "attachment_id": body.get("attachmentId")})
         for sub in part.get("parts", []) or []:
             walk(sub)
 
@@ -165,7 +167,7 @@ def _ingest_message(message_id: str) -> bool:
         customer=customer,
         subject=subject,
         needs_human=True,  # el correo no lo atiende el bot
-        attachments=_attachments(msg.get("payload", {})),
+        attachments=_attachments(msg.get("payload", {}), msg["id"]),
     ))
 
 
@@ -193,6 +195,11 @@ def import_history(days: int = 180, close_after_days: int = 7) -> dict:
             print(f"[crm_gmail] {n}/{len(pending)} processed, {imported} imported.")
     closed = crm.close_stale("email", close_after_days)
     return {"messages": len(ids), "imported": imported, "closed": closed}
+
+
+def get_attachment(message_id: str, attachment_id: str) -> bytes:
+    data = _get(f"messages/{message_id}/attachments/{attachment_id}")["data"]
+    return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
 def send_reply(thread_id: str, text: str) -> str:

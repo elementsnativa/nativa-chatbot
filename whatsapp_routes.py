@@ -27,6 +27,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
 import crm
+import crm_media
 from database import get_db
 from prompts import SYSTEM_PROMPT
 from shopify_tools import get_product_image, get_products_context
@@ -267,12 +268,14 @@ async def whatsapp_incoming(request: Request):
     # Respuestas que el equipo envía desde la app WhatsApp Business (número en
     # coexistencia app + API): llegan como ecos y cuentan como respuesta humana.
     for echo in value.get("message_echoes") or []:
+        files = await asyncio.to_thread(crm_media.whatsapp_attachments, echo) if crm.enabled() else []
         await asyncio.to_thread(
             crm.ingest,
             "whatsapp", echo.get("to", ""), "agente", _wa_message_text(echo),
             external_id=f"wa:{echo['id']}" if echo.get("id") else None,
             sent_at=float(echo.get("timestamp") or time.time()),
             author_email=WHATSAPP_APP_AGENT,
+            attachments=files,
         )
 
     if "messages" not in value:
@@ -283,6 +286,7 @@ async def whatsapp_incoming(request: Request):
     # Todo mensaje entrante queda en el CRM, esté o no activo el bot.
     # Sin bot, la conversación pasa directo a la cola humana (corre el SLA).
     profile_name = ((value.get("contacts") or [{}])[0].get("profile") or {}).get("name")
+    files = await asyncio.to_thread(crm_media.whatsapp_attachments, message) if crm.enabled() else []
     await asyncio.to_thread(
         crm.ingest,
         "whatsapp", message["from"], "cliente", _wa_message_text(message),
@@ -290,6 +294,7 @@ async def whatsapp_incoming(request: Request):
         sent_at=float(message.get("timestamp") or time.time()),
         customer={"phone": message["from"], "name": profile_name},
         needs_human=not WHATSAPP_BOT_ENABLED,
+        attachments=files,
     )
 
     if not WHATSAPP_BOT_ENABLED:
