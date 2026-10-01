@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -68,6 +69,9 @@ def health():
 
 
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "nativa-admin-2024")
+
+# Minimum seconds between two manual test sends to the same phone.
+CART_TEST_COOLDOWN = float(os.getenv("CART_TEST_COOLDOWN_SECONDS", "180"))
 
 
 @app.get("/admin")
@@ -248,20 +252,50 @@ def admin_cart_test(phone: str, secret: str = "", stage: int = 1,
             "preview": f"Hola {body_params[0]}, dejaste {body_params[1]} en tu carrito.",
         }
 
+    # A send behind a GET repeats itself: browsers prefetch links from the
+    # address bar, resend on reload, and WhatsApp fetches a URL to build its
+    # preview when the link is pasted into a chat. One intended test became
+    # five real messages that way, so repeats inside the cooldown are refused.
+    now = time.time()
+    db = get_db()
     try:
-        response = send_template(to, template, body_params,
-                                 language=language, button_params=["cart"])
-    except Exception as exc:
-        return {
-            "sent": False, "to": to, "template": template, "language": language,
-            "body_params": body_params, "error": str(exc),
-        }
+        recent = db.execute(
+            "SELECT sent_at FROM test_sends WHERE phone = ? AND sent_at > ? ORDER BY sent_at DESC LIMIT 1",
+            (to, now - CART_TEST_COOLDOWN),
+        ).fetchone()
+        if recent:
+            wait = int(CART_TEST_COOLDOWN - (now - float(recent["sent_at"])))
+            return {
+                "sent": False, "to": to, "blocked": "cooldown",
+                "message": f"Ya se envió un mensaje de prueba a este número hace menos de "
+                           f"{int(CART_TEST_COOLDOWN)}s. Esperá {wait}s para volver a probar, "
+                           f"o usá dry=1 para verificar sin enviar.",
+            }
+
+        try:
+            response = send_template(to, template, body_params,
+                                     language=language, button_params=["cart"])
+        except Exception as exc:
+            body = getattr(getattr(exc, "response", None), "text", "")
+            return {
+                "sent": False, "to": to, "template": template, "language": language,
+                "body_params": body_params, "error": str(exc), "meta_response": body[:600],
+            }
+
+        message_id = (response.get("messages") or [{}])[0].get("id")
+        db.execute(
+            "INSERT INTO test_sends (phone, stage, template, message_id, sent_at) VALUES (?, ?, ?, ?, ?)",
+            (to, stage, template, message_id, now),
+        )
+        db.commit()
+    finally:
+        db.close()
 
     return {
         "sent": True, "to": to, "template": template, "language": language,
         "body_params": body_params,
         "button": "cart",
-        "message_id": (response.get("messages") or [{}])[0].get("id"),
+        "message_id": message_id,
     }
 
 

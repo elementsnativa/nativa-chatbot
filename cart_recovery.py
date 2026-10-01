@@ -258,13 +258,39 @@ def has_purchased(db, phone: str, since_ts: float) -> bool:
 # ── Sending ───────────────────────────────────────────────────────────────────
 
 def send_stage(db, cart, stage: int, template: str, language: str, now_ts: float) -> None:
-    """Send one stage of the sequence and record it. Raises on failure."""
+    """
+    Claim the cart for this stage, then send. Raises on failure.
+
+    The claim comes first and is conditional on the stage not having moved. The
+    old order — send, then record — meant a failed write, or two instances
+    running during a redeploy, could send the same message twice. Here the
+    conditional UPDATE is the lock: whoever changes the row wins, everyone else
+    sees rowcount 0 and does nothing.
+
+    A send that fails afterwards is NOT rolled back. The caller marks the cart
+    'error' instead, because retrying on a loop is how a single cart turns into
+    a stream of duplicate messages to a real person.
+    """
     phone = cart["phone"]
     body_params = [first_name_of(cart["name"]), format_products(cart["products"])]
     suffix = (
         f"c/{cart['token']}" if CLICK_TRACKING_DOMAIN
         else checkout_button_suffix(cart["checkout_url"])
     )
+
+    claim = db.execute(
+        """
+        UPDATE abandoned_carts
+        SET    stage = ?, last_sent_at = ?, message_sent_at = ?, status = ?
+        WHERE  token = ? AND COALESCE(stage, 0) = ? AND status = 'pending'
+        """,
+        (stage, now_ts, now_ts, "done" if stage >= FINAL_STAGE else "pending",
+         cart["token"], stage - 1),
+    )
+    db.commit()
+    if not claim.rowcount:
+        print(f"[cart_recovery] Cart {cart['token']}: stage {stage} already claimed elsewhere, skipping.")
+        return
 
     response = send_template(
         phone,
@@ -275,14 +301,6 @@ def send_stage(db, cart, stage: int, template: str, language: str, now_ts: float
     )
     message_id = (response.get("messages") or [{}])[0].get("id")
 
-    db.execute(
-        """
-        UPDATE abandoned_carts
-        SET    stage = ?, last_sent_at = ?, message_sent_at = ?, status = ?
-        WHERE  token = ?
-        """,
-        (stage, now_ts, now_ts, "done" if stage >= FINAL_STAGE else "pending", cart["token"]),
-    )
     db.execute(
         """
         INSERT INTO recovery_sends (phone, cart_token, stage, template, message_id, sent_at)

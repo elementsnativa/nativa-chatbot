@@ -144,6 +144,26 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_recovery_replies_at ON recovery_replies (replied_at)"
         )
 
+        # Manual test sends, kept out of recovery_sends so they never pollute
+        # the campaign numbers. Their only job is to enforce a cooldown: the
+        # test endpoint is a GET, and browsers and link previewers re-fetch
+        # those on their own, which is how a single test became five messages.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_sends (
+                id         BIGSERIAL PRIMARY KEY,
+                phone      TEXT NOT NULL,
+                stage      INTEGER NOT NULL,
+                template   TEXT,
+                message_id TEXT,
+                sent_at    DOUBLE PRECISION NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_test_sends_phone ON test_sends (phone, sent_at)"
+        )
+
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS whatsapp_conversations (
