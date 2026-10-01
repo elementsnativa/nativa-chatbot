@@ -256,17 +256,20 @@ def _classify_ticket(cur, ticket_id: int, categories: list[dict]) -> None:
         UPDATE tickets SET
             ai_category = %s, ai_fault = %s, ai_resolution = %s, ai_sentiment = %s,
             ai_suggested_status = %s, ai_summary = %s, ai_classified_at = now(),
-            -- la IA solo rellena lo que SAC aún no ha decidido
-            category        = CASE WHEN category_source = 'sac' THEN category ELSE %s END,
-            category_source = CASE WHEN category_source = 'sac' THEN 'sac' ELSE 'ia' END,
-            fault           = COALESCE(fault, %s),
-            order_name      = COALESCE(order_name, %s)
+            -- la IA solo rellena lo que nadie editó a mano (manual_fields)
+            category        = CASE WHEN 'category' = ANY(manual_fields) THEN category ELSE %s END,
+            category_source = CASE WHEN 'category' = ANY(manual_fields) THEN 'sac' ELSE 'ia' END,
+            fault           = CASE WHEN 'fault' = ANY(manual_fields) THEN fault ELSE %s::crm_fault END,
+            resolution      = CASE WHEN 'resolution' = ANY(manual_fields) THEN resolution
+                                   ELSE COALESCE(%s::crm_resolution, resolution) END,
+            order_name      = CASE WHEN 'order_name' = ANY(manual_fields) THEN order_name
+                                   ELSE COALESCE(order_name, %s) END
         WHERE id = %s
         """,
         (
             category, result.fault, result.resolution, result.sentiment,
             result.suggested_status, result.summary,
-            category, result.fault, result.order_name, ticket_id,
+            category, result.fault, result.resolution, result.order_name, ticket_id,
         ),
     )
 
