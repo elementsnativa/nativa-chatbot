@@ -176,6 +176,60 @@ def admin_resume(channel: str, contact_id: str, secret: str = ""):
     return {"status": "resumed", "channel": channel, "contact": contact_id}
 
 
+@app.get("/admin/cart-test/{phone}")
+def admin_cart_test(phone: str, secret: str = "", stage: int = 1,
+                    name: str = "Sebastián Pérez",
+                    products: str = '[{"title": "Polera Negra Oversize M"}, {"title": "Short Trail"}]'):
+    """
+    Send one real cart-recovery template to a phone, to verify end to end that
+    the parameters, the language and above all the URL button work before any
+    customer is messaged.
+
+    The button points at the storefront cart rather than a real abandoned
+    checkout, since a test has no checkout token to borrow.
+
+    Example:
+      /admin/cart-test/56951985753?secret=...&stage=1
+    """
+    if secret != ADMIN_SECRET:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Invalid secret")
+
+    from whatsapp_client import normalize_phone, send_template
+    from cart_recovery import STAGES, first_name_of, format_products, get_config
+
+    to = normalize_phone(phone)
+    if not to:
+        return {"error": f"could not normalise phone {phone!r}"}
+    if not 1 <= stage <= len(STAGES):
+        return {"error": f"stage must be between 1 and {len(STAGES)}"}
+
+    _, _, config_key, fallback = STAGES[stage - 1]
+    db = get_db()
+    try:
+        template = get_config(db, config_key, fallback)
+        language = get_config(db, "cart_template_lang", "es")
+    finally:
+        db.close()
+
+    body_params = [first_name_of(name), format_products(products)]
+    try:
+        response = send_template(to, template, body_params,
+                                 language=language, button_params=["cart"])
+    except Exception as exc:
+        return {
+            "sent": False, "to": to, "template": template, "language": language,
+            "body_params": body_params, "error": str(exc),
+        }
+
+    return {
+        "sent": True, "to": to, "template": template, "language": language,
+        "body_params": body_params,
+        "button": "cart",
+        "message_id": (response.get("messages") or [{}])[0].get("id"),
+    }
+
+
 @app.get("/data-deletion")
 def data_deletion():
     from fastapi.responses import HTMLResponse
