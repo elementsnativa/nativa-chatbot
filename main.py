@@ -14,6 +14,7 @@ from instagram_client import start_token_refresh_scheduler
 from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
 from instagram_routes import router as instagram_router
 from dashboard import router as dashboard_router
+from crm import router as crm_router, start_crm_scheduler
 from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
 from database import get_db
 
@@ -24,6 +25,7 @@ load_dotenv()
 async def lifespan(app):
     start_recovery_scheduler()
     start_token_refresh_scheduler()
+    start_crm_scheduler()
     yield
 
 
@@ -31,6 +33,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(whatsapp_router)
 app.include_router(instagram_router)
 app.include_router(dashboard_router)
+app.include_router(crm_router)
 
 app.add_middleware(
     CORSMiddleware,
