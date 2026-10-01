@@ -23,7 +23,7 @@ from fastapi.responses import PlainTextResponse
 
 import crm
 from database import get_db
-from instagram_client import VERIFY_TOKEN, send_image, send_text
+from instagram_client import VERIFY_TOKEN, get_profile, send_image, send_text
 from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
 from shopify_tools import get_product_image, get_products_context
 from order_lookup import create_with_order_tool
@@ -346,11 +346,14 @@ async def instagram_incoming(request: Request):
             crm_text = f"[{kinds}] {crm_text}".strip()
         if message.get("reply_to", {}).get("story"):
             crm_text = f"[respuesta a historia] {crm_text}".strip()
+        sender = messaging["sender"]["id"]
+        profile = await asyncio.to_thread(get_profile, sender) if crm.enabled() else {}
         await asyncio.to_thread(
-            crm.ingest, "instagram", messaging["sender"]["id"], "cliente", crm_text,
+            crm.ingest, "instagram", sender, "cliente", crm_text,
             external_id=f"ig:{message['mid']}" if message.get("mid") else None,
             sent_at=(messaging.get("timestamp") or time.time() * 1000) / 1000,
-            customer={"instagram_psid": messaging["sender"]["id"]},
+            customer={"instagram_psid": sender, "name": profile.get("name"),
+                      "instagram_username": profile.get("username")},
             attachments=[{"type": a.get("type"), "url": (a.get("payload") or {}).get("url")}
                          for a in message.get("attachments") or []],
         )

@@ -145,6 +145,30 @@ def _post(payload: dict, what: str, recipient_id: str) -> dict:
         raise
 
 
+_profile_cache: dict[str, dict] = {}
+
+
+def get_profile(igsid: str) -> dict:
+    """Nombre y @usuario de quien escribió (API de perfil de Instagram). {} si no se puede."""
+    if igsid in _profile_cache:
+        return _profile_cache[igsid]
+    try:
+        resp = requests.get(
+            f"https://graph.instagram.com/{API_VERSION}/{igsid}",
+            params={"fields": "name,username"},
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        profile = {"name": data.get("name"), "username": data.get("username")}
+    except Exception as exc:
+        print(f"[instagram_client] WARNING: could not fetch profile for {igsid}: {_redact(exc)}")
+        return {}
+    _profile_cache[igsid] = profile
+    return profile
+
+
 def send_text(recipient_id: str, text: str) -> dict:
     """Send a plain-text Instagram DM to *recipient_id* (Instagram PSID)."""
     data = _post(

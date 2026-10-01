@@ -240,6 +240,36 @@ def classify_pending() -> int:
     return done
 
 
+def fill_instagram_profiles() -> int:
+    """Completa nombre y @usuario de clientes de Instagram que entraron sin ellos."""
+    if not enabled():
+        return 0
+    from instagram_client import get_profile
+
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, instagram_psid FROM customers "
+                "WHERE instagram_psid IS NOT NULL AND instagram_username IS NULL LIMIT 20"
+            )
+            pending = cur.fetchall()
+        filled = 0
+        for customer_id, psid in pending:
+            profile = get_profile(psid)
+            if not profile.get("username"):
+                continue
+            with conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE customers SET instagram_username = %s, name = COALESCE(name, %s) WHERE id = %s",
+                    (profile["username"], profile.get("name"), customer_id),
+                )
+            filled += 1
+        return filled
+    finally:
+        conn.close()
+
+
 def autoclose() -> None:
     if not enabled():
         return
@@ -258,13 +288,14 @@ def start_crm_scheduler() -> None:
     from crm_gmail import poll_gmail, gmail_enabled, POLL_INTERVAL
 
     def loop():
-        last = {"gmail": 0.0, "classify": 0.0, "autoclose": 0.0}
+        last = {"gmail": 0.0, "classify": 0.0, "autoclose": 0.0, "profiles": 0.0}
         while True:
             now = time.time()
             jobs = [
                 ("gmail", POLL_INTERVAL, poll_gmail if gmail_enabled() else None),
                 ("classify", CLASSIFY_INTERVAL, classify_pending),
                 ("autoclose", AUTOCLOSE_INTERVAL, autoclose),
+                ("profiles", AUTOCLOSE_INTERVAL, fill_instagram_profiles),
             ]
             for name, every, fn in jobs:
                 if fn and now - last[name] >= every:
