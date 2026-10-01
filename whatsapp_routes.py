@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
+import crm
 from database import get_db
 from prompts import SYSTEM_PROMPT
 from shopify_tools import get_product_image, get_products_context
@@ -148,6 +149,7 @@ async def _debounced_reply_wa(phone: str) -> None:
     if human_takeover:
         print(f"[whatsapp_routes] Human takeover active for {phone} — bot skipped.")
         db.close()
+        crm.mark_needs_human("whatsapp", phone)
         return
 
     history = history[-10:]
@@ -199,6 +201,8 @@ async def _debounced_reply_wa(phone: str) -> None:
                 f"Email: {EMAIL_CONTACT}"
             )
             send_text(phone, escalate_text)
+            crm.ingest("whatsapp", phone, "bot", escalate_text)
+            crm.mark_needs_human("whatsapp", phone)
             _set_whatsapp_takeover(phone)
             print(f"[whatsapp_routes] Escalation sent + human takeover set for {phone}.")
             return
@@ -222,9 +226,23 @@ async def _debounced_reply_wa(phone: str) -> None:
     parts = [p.strip() for p in reply.split(" || ", 1) if p.strip()]
     for part in parts:
         try:
-            send_text(phone, part)
+            data = send_text(phone, part)
+            wamid = (data.get("messages") or [{}])[0].get("id")
+            crm.ingest("whatsapp", phone, "bot", part, external_id=wamid and f"wa:{wamid}")
         except Exception as exc:
             print(f"[whatsapp_routes] ERROR sending message to {phone}: {exc}")
+
+
+def _wa_message_text(message: dict) -> str:
+    """Texto legible de cualquier tipo de mensaje de WhatsApp."""
+    kind = message.get("type")
+    if kind == "text":
+        return message["text"]["body"]
+    caption = (message.get(kind) or {}).get("caption") if isinstance(message.get(kind), dict) else None
+    labels = {"image": "imagen", "audio": "audio", "video": "video", "document": "documento",
+              "sticker": "sticker", "location": "ubicación", "contacts": "contacto"}
+    label = f"[{labels.get(kind, kind)}]"
+    return f"{label} {caption}" if caption else label
 
 
 @router.post("/webhook/whatsapp")
@@ -233,9 +251,6 @@ async def whatsapp_incoming(request: Request):
     Receive incoming WhatsApp messages from Meta.
     Buffers messages per contact and replies once after DEBOUNCE_SECONDS of silence.
     """
-    if not WHATSAPP_BOT_ENABLED:
-        return {"status": "ok"}
-
     try:
         body = await request.json()
     except Exception:
@@ -250,6 +265,21 @@ async def whatsapp_incoming(request: Request):
         return {"status": "ok"}
 
     message = value["messages"][0]
+
+    # Todo mensaje entrante queda en el CRM, esté o no activo el bot.
+    # Sin bot, la conversación pasa directo a la cola humana (corre el SLA).
+    profile_name = ((value.get("contacts") or [{}])[0].get("profile") or {}).get("name")
+    await asyncio.to_thread(
+        crm.ingest,
+        "whatsapp", message["from"], "cliente", _wa_message_text(message),
+        external_id=f"wa:{message['id']}",
+        sent_at=float(message.get("timestamp") or time.time()),
+        customer={"phone": message["from"], "name": profile_name},
+        needs_human=not WHATSAPP_BOT_ENABLED,
+    )
+
+    if not WHATSAPP_BOT_ENABLED:
+        return {"status": "ok"}
 
     if message.get("type") != "text":
         print(f"[whatsapp_routes] Ignoring non-text message type: {message.get('type')}")
@@ -459,6 +489,7 @@ async def setup_shopify_webhooks():
         {"topic": "checkouts/create",  "address": f"{base}/webhook/shopify/checkout"},
         {"topic": "checkouts/update",  "address": f"{base}/webhook/shopify/checkout"},
         {"topic": "orders/paid",       "address": f"{base}/webhook/shopify/order_paid"},
+        {"topic": "refunds/create",    "address": f"{base}/webhook/shopify/refund"},
     ]
 
     api_url = f"https://{SHOPIFY_STORE_URL}/admin/api/{SHOPIFY_API_VERSION}/webhooks.json"

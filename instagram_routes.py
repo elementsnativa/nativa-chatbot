@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
+import crm
 from database import get_db
 from instagram_client import VERIFY_TOKEN, send_image, send_text
 from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
@@ -94,6 +95,33 @@ def _is_own_echo(psid: str, text: str) -> bool:
     return False
 
 
+def _remember_bot_mid(mid: str | None) -> None:
+    if mid:
+        _bot_sent_mids[mid] = None
+        while len(_bot_sent_mids) > MAX_SENT_MIDS:
+            _bot_sent_mids.pop(next(iter(_bot_sent_mids)))
+
+
+def pause_bot_for(psid: str, sent_mid: str | None = None) -> None:
+    """Una persona respondió desde el CRM: el bot se calla en esta conversación."""
+    _remember_bot_mid(sent_mid)  # su eco no debe tratarse como mensaje nuevo
+    db = get_db()
+    try:
+        db.execute(
+            """
+            INSERT INTO instagram_conversations (psid, history, updated_at, human_takeover)
+            VALUES (?, '[]', ?, ?)
+            ON CONFLICT(psid) DO UPDATE SET
+                human_takeover = excluded.human_takeover,
+                updated_at     = excluded.updated_at
+            """,
+            (psid, time.time(), time.time()),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 # ── 1. GET /webhook/instagram — Meta verification handshake ─────────────────
 
 @router.get("/webhook/instagram", response_class=PlainTextResponse)
@@ -148,6 +176,7 @@ async def _debounced_reply_ig(psid: str) -> None:
         if (time.time() - human_takeover) < HUMAN_TAKEOVER_TTL:
             print(f"[instagram_routes] Human takeover active for {psid} — bot skipped.")
             db.close()
+            crm.mark_needs_human("instagram", psid)
             return
         # Takeover expired — the bot takes the conversation back
         print(f"[instagram_routes] Human takeover expired for {psid} — bot resuming.")
@@ -209,7 +238,11 @@ async def _debounced_reply_ig(psid: str) -> None:
                 f"Email: {EMAIL_CONTACT}\n"
                 f"WhatsApp: {WHATSAPP_CONTACT} (puede tardar más en ser contestado)"
             )
-            send_text(psid, escalate_text)
+            result = send_text(psid, escalate_text)
+            _remember_bot_mid(result.get("message_id"))
+            crm.ingest("instagram", psid, "bot", escalate_text,
+                       external_id=result.get("message_id") and f"ig:{result['message_id']}")
+            crm.mark_needs_human("instagram", psid)
             print(f"[instagram_routes] Escalation sent to {psid}.")
             return
     except (json.JSONDecodeError, TypeError, KeyError):
@@ -218,10 +251,8 @@ async def _debounced_reply_ig(psid: str) -> None:
     try:
         result = send_text(psid, reply)
         mid = result.get("message_id")
-        if mid:
-            _bot_sent_mids[mid] = None
-            while len(_bot_sent_mids) > MAX_SENT_MIDS:
-                _bot_sent_mids.pop(next(iter(_bot_sent_mids)))
+        _remember_bot_mid(mid)
+        crm.ingest("instagram", psid, "bot", reply, external_id=mid and f"ig:{mid}")
     except Exception as exc:
         print(f"[instagram_routes] ERROR sending message to {psid}: {exc}")
 
@@ -267,6 +298,12 @@ async def instagram_incoming(request: Request):
             print(f"[instagram_routes] Ignoring story-reply echo — skipping takeover.")
             return {"status": "ok"}
         # Admin resume code typed from the page side — reactivate bot
+        if echo_text.upper() != BOT_RESUME_CODE:
+            # Respuesta escrita por una persona desde la app de Instagram
+            await asyncio.to_thread(
+                crm.ingest, "instagram", customer_psid, "agente", echo_text,
+                external_id=f"ig:{echo_mid}" if echo_mid else None,
+            )
         if echo_text.upper() == BOT_RESUME_CODE:
             db = get_db()
             try:
@@ -300,6 +337,23 @@ async def instagram_incoming(request: Request):
         finally:
             db.close()
         return {"status": "ok"}
+
+    if message and not message.get("is_echo") and "sender" in messaging:
+        # Registrar en el CRM todo lo que escribe el cliente (texto, fotos, respuestas a historias)
+        crm_text = message.get("text") or ""
+        if message.get("attachments"):
+            kinds = ", ".join(a.get("type", "adjunto") for a in message["attachments"])
+            crm_text = f"[{kinds}] {crm_text}".strip()
+        if message.get("reply_to", {}).get("story"):
+            crm_text = f"[respuesta a historia] {crm_text}".strip()
+        await asyncio.to_thread(
+            crm.ingest, "instagram", messaging["sender"]["id"], "cliente", crm_text,
+            external_id=f"ig:{message['mid']}" if message.get("mid") else None,
+            sent_at=(messaging.get("timestamp") or time.time() * 1000) / 1000,
+            customer={"instagram_psid": messaging["sender"]["id"]},
+            attachments=[{"type": a.get("type"), "url": (a.get("payload") or {}).get("url")}
+                         for a in message.get("attachments") or []],
+        )
 
     if "text" not in message:
         print(f"[instagram_routes] Ignoring non-text message: {list(message.keys())}")
