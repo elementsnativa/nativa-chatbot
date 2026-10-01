@@ -172,14 +172,16 @@ def _ingest_message(message_id: str) -> bool:
 def poll_gmail() -> int:
     """Trae los correos de los últimos 2 días que aún no estén en el CRM."""
     ids = _list_ids(f"newer_than:2d {_QUERY}", limit=500)
-    new = [i for i in ids if not crm.message_exists(f"gmail:{i}")]
+    known = crm.existing_external_ids([f"gmail:{i}" for i in ids])
+    new = [i for i in ids if f"gmail:{i}" not in known]
     return sum(_ingest_message(i) for i in new)
 
 
 def import_history(days: int = 180, close_after_days: int = 7) -> dict:
     """Importa el historial de sac@ y cierra las conversaciones antiguas con su fecha real."""
     ids = _list_ids(f"newer_than:{days}d {_QUERY}")
-    pending = [i for i in ids if not crm.message_exists(f"gmail:{i}")]
+    known = crm.existing_external_ids([f"gmail:{i}" for i in ids])
+    pending = [i for i in ids if f"gmail:{i}" not in known]
     print(f"[crm_gmail] Importing {len(pending)} of {len(ids)} messages from the last {days} days.")
     imported = 0
     for n, message_id in enumerate(pending, 1):

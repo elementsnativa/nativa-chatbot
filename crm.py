@@ -121,8 +121,17 @@ def thread_exists(channel: str, thread_key: str) -> bool:
     ) is not None
 
 
-def message_exists(external_id: str) -> bool:
-    return enabled() and _query_one("SELECT 1 FROM messages WHERE external_id = %s", (external_id,)) is not None
+def existing_external_ids(external_ids: list[str]) -> set[str]:
+    """Cuáles de estos ids ya están registrados (una sola consulta)."""
+    if not enabled() or not external_ids:
+        return set()
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT external_id FROM messages WHERE external_id = ANY(%s)", (external_ids,))
+            return {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
 
 
 def close_stale(channel: str, older_than_days: int) -> int:
