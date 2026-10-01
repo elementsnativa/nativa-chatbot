@@ -179,7 +179,8 @@ def admin_resume(channel: str, contact_id: str, secret: str = ""):
 @app.get("/admin/cart-test/{phone}")
 def admin_cart_test(phone: str, secret: str = "", stage: int = 1,
                     name: str = "Sebastián Pérez",
-                    products: str = '[{"title": "Polera Negra Oversize M"}, {"title": "Short Trail"}]'):
+                    products: str = '[{"title": "Polera Negra Oversize M"}, {"title": "Short Trail"}]',
+                    dry: bool = False):
     """
     Send one real cart-recovery template to a phone, to verify end to end that
     the parameters, the language and above all the URL button work before any
@@ -190,6 +191,11 @@ def admin_cart_test(phone: str, secret: str = "", stage: int = 1,
 
     Example:
       /admin/cart-test/56951985753?secret=...&stage=1
+      /admin/cart-test/56951985753?secret=...&stage=1&dry=1   (nothing is sent)
+
+    dry=1 resolves the template, the language and every parameter and returns
+    them without calling Meta, so a deploy can be verified without paying for
+    a marketing message or messaging a real phone.
     """
     if secret != ADMIN_SECRET:
         from fastapi import HTTPException
@@ -213,6 +219,14 @@ def admin_cart_test(phone: str, secret: str = "", stage: int = 1,
         db.close()
 
     body_params = [first_name_of(name), format_products(products)]
+
+    if dry:
+        return {
+            "sent": False, "dry_run": True, "to": to, "template": template,
+            "language": language, "body_params": body_params, "button": "cart",
+            "preview": f"Hola {body_params[0]}, dejaste {body_params[1]} en tu carrito.",
+        }
+
     try:
         response = send_template(to, template, body_params,
                                  language=language, button_params=["cart"])
