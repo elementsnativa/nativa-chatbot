@@ -116,13 +116,54 @@ def get_config(db, key: str, fallback: str) -> str:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def format_products(products_json: str, max_items: int = 3) -> str:
+# Words that stay lowercase when a shouting product title is title-cased.
+_LOWERCASE_WORDS = {
+    "de", "del", "con", "sin", "y", "e", "o", "u", "a", "en", "para", "por",
+    "la", "el", "los", "las", "un", "una", "al",
+}
+_TRADEMARKS = re.compile(r"[®™©]")
+
+
+def clean_title(title: str, limit: int = 40) -> str:
+    """
+    Make a Shopify product title readable inside a sentence.
+
+    The catalogue stores titles as shop signage — "COMPRESS MANGA LARGA NEGRA
+    CON GRIS LEGEND®" — which reads as shouting in a WhatsApp message and eats
+    the parameter budget. Shouting titles are title-cased, trademark symbols
+    dropped, and anything still too long is cut at a word boundary.
+    """
+    text = _TRADEMARKS.sub("", _WHITESPACE.sub(" ", str(title or ""))).strip()
+    if not text:
+        return ""
+
+    letters = [c for c in text if c.isalpha()]
+    if letters and sum(c.isupper() for c in letters) / len(letters) > 0.7:
+        words = []
+        for index, word in enumerate(text.lower().split(" ")):
+            if index > 0 and word in _LOWERCASE_WORDS:
+                words.append(word)
+            else:
+                words.append(word[:1].upper() + word[1:])
+        text = " ".join(words)
+
+    if len(text) > limit:
+        cut = text[:limit].rsplit(" ", 1)[0]
+        text = (cut or text[:limit]).rstrip(" ,.-")
+    return text
+
+
+def format_products(products_json: str, max_items: int = 2) -> str:
     """
     Turn the stored JSON list of {title, price} into ONE line fit for a template
     parameter. Deliberately a sentence rather than a bullet list, because Meta
     rejects parameters containing new-lines:
 
-        "Polera Trail Run, Short Outdoor y 2 productos más"
+        "Polera Dry Fit Negra y Short Wp Negro"
+        "Buzo Fit Recto Negro, Peto Seamless Negro y 2 productos más"
+
+    Two items rather than three: real titles here run to 40 characters, and
+    three of them turn the sentence into a wall of text.
     """
     try:
         items = json.loads(products_json or "[]")
@@ -130,10 +171,11 @@ def format_products(products_json: str, max_items: int = 3) -> str:
         items = []
 
     titles = [
-        _WHITESPACE.sub(" ", str(item.get("title", "")).strip())
+        clean_title(item.get("title", ""))
         for item in items
         if isinstance(item, dict) and item.get("title")
     ]
+    titles = [t for t in titles if t]
     if not titles:
         return "tu selección"
 
