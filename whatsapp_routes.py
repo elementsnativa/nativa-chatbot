@@ -55,6 +55,9 @@ DEBOUNCE_SECONDS = 20  # wait this long for more messages before replying
 # templates (cart_recovery.py) are unaffected and keep sending.
 WHATSAPP_BOT_ENABLED = False
 
+# Cómo aparecen en el CRM las respuestas enviadas desde la app del celular
+WHATSAPP_APP_AGENT = os.getenv("WHATSAPP_APP_AGENT", "app-whatsapp")
+
 _message_buffer: dict[str, list[str]] = {}
 _pending_tasks: dict[str, asyncio.Task] = {}
 
@@ -260,6 +263,17 @@ async def whatsapp_incoming(request: Request):
         value = body["entry"][0]["changes"][0]["value"]
     except (KeyError, IndexError):
         return {"status": "ok"}
+
+    # Respuestas que el equipo envía desde la app WhatsApp Business (número en
+    # coexistencia app + API): llegan como ecos y cuentan como respuesta humana.
+    for echo in value.get("message_echoes") or []:
+        await asyncio.to_thread(
+            crm.ingest,
+            "whatsapp", echo.get("to", ""), "agente", _wa_message_text(echo),
+            external_id=f"wa:{echo['id']}" if echo.get("id") else None,
+            sent_at=float(echo.get("timestamp") or time.time()),
+            author_email=WHATSAPP_APP_AGENT,
+        )
 
     if "messages" not in value:
         return {"status": "ok"}
