@@ -391,14 +391,31 @@ async def shopify_checkout_webhook(request: Request):
     checkout_url: str = checkout.get("abandoned_checkout_url", "")
     created_at: float = time.time()
 
+    # Marketing consent. Meta requires an explicit opt-in before a business may
+    # send a Marketing-category template, and sending without one is what drives
+    # a number's quality rating down. Shopify reports consent in several shapes
+    # depending on how the checkout was completed, so all of them are checked.
+    customer = checkout.get("customer") or {}
+    sms_consent = (
+        (checkout.get("sms_marketing_consent") or {}).get("state")
+        or (customer.get("sms_marketing_consent") or {}).get("state")
+    )
+    accepts_marketing = bool(
+        checkout.get("buyer_accepts_marketing")
+        or checkout.get("buyer_accepts_sms_marketing")
+        or customer.get("accepts_marketing")
+        or (sms_consent == "subscribed")
+    )
+
     # ── Persist to DB (ignore if token already exists) ────────────────────────
     db = get_db()
     try:
         db.execute(
             """
             INSERT INTO abandoned_carts
-                (token, phone, name, products, checkout_url, total, created_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+                (token, phone, name, products, checkout_url, total, created_at,
+                 status, accepts_marketing)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
             ON CONFLICT (token) DO NOTHING
             """,
             (
@@ -409,12 +426,14 @@ async def shopify_checkout_webhook(request: Request):
                 checkout_url,
                 total_price,
                 created_at,
+                accepts_marketing,
             ),
         )
         db.commit()
         print(
             f"[whatsapp_routes] Checkout {token} saved — phone={phone}, "
-            f"name={name!r}, items={len(products)}, total={total_price}"
+            f"name={name!r}, items={len(products)}, total={total_price}, "
+            f"opt_in={accepts_marketing}"
         )
     except Exception as exc:
         print(f"[whatsapp_routes] ERROR saving checkout {token}: {exc}")

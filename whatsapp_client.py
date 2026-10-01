@@ -30,6 +30,24 @@ _BASE_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/message
 
 # ── Public helpers ────────────────────────────────────────────────────────────
 
+_PARAM_WHITESPACE = re.compile(r"\s+")
+
+
+def sanitize_param(value: str, limit: int = 300) -> str:
+    """
+    Make a string safe to use as a WhatsApp template parameter.
+
+    Meta rejects any parameter containing a new-line or tab with error 132000
+    ("parameter format does not match"), which silently broke every cart
+    recovery send until the parameters were emptied out to work around it.
+    Whitespace is collapsed to single spaces and the result truncated.
+    """
+    collapsed = _PARAM_WHITESPACE.sub(" ", str(value or "")).strip()
+    if len(collapsed) > limit:
+        collapsed = collapsed[: limit - 1].rstrip() + "\u2026"
+    return collapsed
+
+
 def send_text(to: str, text: str) -> dict:
     """
     Send a plain-text WhatsApp message to *to* (E.164 digits, no +).
@@ -97,7 +115,7 @@ def send_template(
     if params:
         components.append({
             "type": "body",
-            "parameters": [{"type": "text", "text": p} for p in params],
+            "parameters": [{"type": "text", "text": sanitize_param(p)} for p in params],
         })
     if button_params:
         for i, url in enumerate(button_params):
@@ -105,7 +123,7 @@ def send_template(
                 "type": "button",
                 "sub_type": "url",
                 "index": str(i),
-                "parameters": [{"type": "text", "text": url}],
+                "parameters": [{"type": "text", "text": sanitize_param(url, limit=1000)}],
             })
     if components:
         template_payload["components"] = components

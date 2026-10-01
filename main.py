@@ -35,9 +35,19 @@ app.include_router(instagram_router)
 app.include_router(dashboard_router)
 app.include_router(crm_router)
 
+# Only the storefront may call /chat — every request runs on our Anthropic credit.
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://www.nativaelements.com,https://nativaelements.com",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )

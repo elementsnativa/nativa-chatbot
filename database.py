@@ -5,6 +5,7 @@ Tables:
   - whatsapp_conversations
   - instagram_conversations
   - completed_orders
+  - recovery_sends
 
 Uses DATABASE_URL env var (postgresql://...).
 DBWrapper mimics sqlite3's connection interface so routes need no changes.
@@ -36,6 +37,11 @@ class DBWrapper:
     def commit(self):
         self._conn.commit()
 
+    def rollback(self):
+        """Clear an aborted transaction. PostgreSQL refuses every further
+        statement on a connection whose last statement failed."""
+        self._conn.rollback()
+
     def close(self):
         self._cur.close()
         self._conn.close()
@@ -65,6 +71,40 @@ def init_db() -> None:
                 message_sent_at    DOUBLE PRECISION
             )
             """
+        )
+
+        # Columns added after abandoned_carts first shipped.
+        #   stage             — how many recovery messages this cart has received
+        #   last_sent_at      — when the most recent one went out
+        #   accepts_marketing — Meta requires opt-in for Marketing templates
+        for column, ddl in (
+            ("stage", "INTEGER NOT NULL DEFAULT 0"),
+            ("last_sent_at", "DOUBLE PRECISION"),
+            ("accepts_marketing", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ):
+            cur.execute(f"ALTER TABLE abandoned_carts ADD COLUMN IF NOT EXISTS {column} {ddl}")
+
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_carts_status ON abandoned_carts (status, created_at)"
+        )
+
+        # One row per recovery message handed to the Cloud API. Drives the
+        # per-phone cooldown and makes the funnel measurable.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recovery_sends (
+                id           BIGSERIAL PRIMARY KEY,
+                phone        TEXT NOT NULL,
+                cart_token   TEXT NOT NULL,
+                stage        INTEGER NOT NULL,
+                template     TEXT NOT NULL,
+                message_id   TEXT,
+                sent_at      DOUBLE PRECISION NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_recovery_sends_phone ON recovery_sends (phone, sent_at)"
         )
 
         cur.execute(
@@ -132,10 +172,14 @@ def init_db() -> None:
             VALUES
                 ('cart_template_first',     'msj_1',                %s),
                 ('cart_template_returning', 'antiguo_con_codigo',   %s),
-                ('cart_template_followup',  'cliente_nuevo2_',      %s)
+                ('cart_template_followup',  'cliente_nuevo2_',      %s),
+                ('cart_stage1_template',    'carrito_abandonado',   %s),
+                ('cart_stage2_template',    'carrito_24h',          %s),
+                ('cart_stage3_template',    'carrito_72h',          %s),
+                ('cart_template_lang',      'es',                   %s)
             ON CONFLICT (key) DO NOTHING
             """,
-            (0.0, 0.0, 0.0),
+            (0.0,) * 7,
         )
 
         conn.commit()

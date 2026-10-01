@@ -1,21 +1,58 @@
 """
 cart_recovery.py — Abandoned cart recovery scheduler for Nativa Elements.
 
-Runs a background daemon thread that wakes up every 60 seconds and processes
-carts that have been abandoned for longer than RECOVERY_DELAY seconds.
+A background daemon wakes up every POLL_INTERVAL seconds and walks each cart
+through a three-message sequence. Every message carries the customer's first
+name, a one-line summary of what they left behind, and a URL button pointing
+straight at their checkout.
 
-Flow per cart:
-  1. Skip if the phone already has a completed order → mark 'converted'
-  2. Skip if no valid phone → mark 'no_phone'
-  3. Send WhatsApp recovery message → mark 'sent'
-  4. On any error → mark 'error' (with log)
+Sequence, measured from the moment the cart was abandoned:
+
+    stage 1 —  1 h  → reminder, no discount
+    stage 2 — 24 h  → reminder + 10% code
+    stage 3 — 72 h  → last call, invites a reply
+
+Template names and language live in bot_config so the admin panel can change
+them without a deploy; the keys are cart_stage1_template, cart_stage2_template,
+cart_stage3_template and cart_template_lang.
+
+Guard rails, each one a failure this code has actually produced:
+
+  - Parameters are single-line. Meta rejects new-lines and tabs inside a
+    parameter with error 132000, which is why the sends were silently emptied
+    to [] and customers received messages with no name, products or link.
+  - Quiet hours in the store timezone, so no cart ever messages anyone at 3 AM.
+  - A per-phone cooldown, so someone who abandons five carts in a week is not
+    messaged fifteen times.
+  - The sequence stops the moment the customer buys.
+  - A cart with no usable checkout URL is skipped rather than sent as a
+    dead end.
+  - Only carts older than SKIP_BACKLOG_AFTER are flushed at startup, so a
+    redeploy no longer discards carts that are still worth recovering — while
+    still preventing the mass send that happened when a backlog built up.
+
+Everything stays off unless CART_RECOVERY_ENABLED is truthy.
+
+Environment variables:
+  CART_RECOVERY_ENABLED   "true" to arm the scheduler            (default: false)
+  REQUIRE_OPT_IN          "true" to send only to opted-in phones (default: false)
+  STORE_PUBLIC_DOMAIN     domain the templates' URL button uses  (default: www.nativaelements.com)
+  STORE_TIMEZONE          IANA timezone for quiet hours          (default: America/Santiago)
+  QUIET_START_HOUR        hour messaging stops, 0-23             (default: 21)
+  QUIET_END_HOUR          hour messaging resumes, 0-23           (default: 9)
+  RECOVERY_COOLDOWN_DAYS  days before re-contacting a phone      (default: 14)
+  SKIP_BACKLOG_HOURS      age past which a cart is dropped       (default: 6)
 
 Call start_recovery_scheduler() once at app startup.
 """
 
 import json
+import os
+import re
 import threading
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -24,200 +61,318 @@ from whatsapp_client import send_template
 
 load_dotenv()
 
-# ── Constants ────────────────────────────────────────────────────────────────
 
-RECOVERY_DELAY   = 45 * 60       # 45 min → first message
-FOLLOWUP_DELAY   = 24 * 60 * 60  # 24 h  → second message (returning customers)
+# ── Configuration ─────────────────────────────────────────────────────────────
 
-# Templates aprobados en NATIVA ELEMENTS WABA — sin parámetros de body
-TEMPLATE_FIRST_TIME = "msj_1"              # sin compra previa — saludo + oferta ayuda
-TEMPLATE_RETURNING  = "antiguo_con_codigo" # compró antes — 10% OFF RECUPERA10
-TEMPLATE_FOLLOWUP   = "cliente_nuevo2_"   # seguimiento 24h — botón URL {{1}} en button
+def _flag(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+ENABLED            = _flag("CART_RECOVERY_ENABLED")
+REQUIRE_OPT_IN     = _flag("REQUIRE_OPT_IN")
+STORE_DOMAIN       = os.getenv("STORE_PUBLIC_DOMAIN", "www.nativaelements.com").strip().rstrip("/")
+COOLDOWN_DAYS      = float(os.getenv("RECOVERY_COOLDOWN_DAYS", "14"))
+QUIET_START        = int(os.getenv("QUIET_START_HOUR", "21"))
+QUIET_END          = int(os.getenv("QUIET_END_HOUR", "9"))
+SKIP_BACKLOG_AFTER = float(os.getenv("SKIP_BACKLOG_HOURS", "6")) * 3600
+POLL_INTERVAL      = 60
+
+try:
+    STORE_TZ = ZoneInfo(os.getenv("STORE_TIMEZONE", "America/Santiago"))
+except Exception:  # pragma: no cover — no tzdata on a slim image
+    STORE_TZ = None
+    print("[cart_recovery] WARNING: timezone unavailable, quiet hours disabled.")
+
+# (stage number, delay since abandonment, bot_config key, fallback template name)
+STAGES: list[tuple[int, int, str, str]] = [
+    (1,  1 * 3600, "cart_stage1_template", "carrito_abandonado"),
+    (2, 24 * 3600, "cart_stage2_template", "carrito_24h"),
+    (3, 72 * 3600, "cart_stage3_template", "carrito_72h"),
+]
+FINAL_STAGE = STAGES[-1][0]
+
+_WHITESPACE = re.compile(r"\s+")
+
+
+# ── bot_config ────────────────────────────────────────────────────────────────
+
+def get_config(db, key: str, fallback: str) -> str:
+    """Read a bot_config value, falling back when the row is missing."""
+    try:
+        row = db.execute("SELECT value FROM bot_config WHERE key = ?", (key,)).fetchone()
+        if row and row["value"]:
+            return str(row["value"]).strip()
+    except Exception as exc:
+        print(f"[cart_recovery] WARNING: could not read config '{key}': {exc}")
+    return fallback
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def format_products(products_json: str) -> str:
+def format_products(products_json: str, max_items: int = 3) -> str:
     """
-    Parse a JSON list of {title, price} dicts and return a bullet list.
-    Shows at most 3 items. Prices are formatted as Chilean pesos.
+    Turn the stored JSON list of {title, price} into ONE line fit for a template
+    parameter. Deliberately a sentence rather than a bullet list, because Meta
+    rejects parameters containing new-lines:
 
-    Example output:
-      • Polera Trail Run — $24.990
-      • Short Outdoor — $19.990
-      • +1 producto más
+        "Polera Trail Run, Short Outdoor y 2 productos más"
     """
     try:
         items = json.loads(products_json or "[]")
     except (json.JSONDecodeError, TypeError):
-        return "• (productos no disponibles)"
+        items = []
 
-    if not items:
-        return "• (carrito vacío)"
+    titles = [
+        _WHITESPACE.sub(" ", str(item.get("title", "")).strip())
+        for item in items
+        if isinstance(item, dict) and item.get("title")
+    ]
+    if not titles:
+        return "tu selección"
 
-    lines = []
-    shown = items[:3]
-    for item in shown:
-        title = item.get("title", "Producto")
-        try:
-            price_raw = float(str(item.get("price", 0)).replace(",", "."))
-            price_str = f"${price_raw:,.0f}".replace(",", ".")
-        except (ValueError, TypeError):
-            price_str = str(item.get("price", ""))
-        lines.append(f"• {title} — {price_str}")
-
-    remaining = len(items) - len(shown)
+    shown, remaining = titles[:max_items], len(titles) - max_items
     if remaining > 0:
-        lines.append(f"  +{remaining} producto{'s' if remaining > 1 else ''} más")
+        return f"{', '.join(shown)} y {remaining} producto{'s' if remaining > 1 else ''} más"
+    if len(shown) == 1:
+        return shown[0]
+    return f"{', '.join(shown[:-1])} y {shown[-1]}"
 
-    return "\n".join(lines)
+
+def first_name_of(full_name: str) -> str:
+    """First name, capitalised, with a neutral fallback."""
+    cleaned = _WHITESPACE.sub(" ", str(full_name or "")).strip()
+    if not cleaned:
+        return "hola"
+    return cleaned.split(" ")[0][:40].capitalize()
 
 
-# ── Core recovery loop ────────────────────────────────────────────────────────
+def checkout_button_suffix(checkout_url: str) -> str | None:
+    """
+    Extract the part of the checkout URL that fills the template's dynamic URL
+    button. Meta's URL buttons are a fixed base plus a trailing variable —
+    https://www.nativaelements.com/{{1}} — so only path and query travel in the
+    message. Returns None when the URL is missing or unusable.
+    """
+    url = (checkout_url or "").strip()
+    if not url:
+        return None
+    match = re.match(r"https?://[^/]+/(.+)", url)
+    return match.group(1) if match else None
+
+
+def within_quiet_hours(now_ts: float) -> bool:
+    """True when local time falls inside the do-not-disturb window."""
+    if STORE_TZ is None or QUIET_START == QUIET_END:
+        return False
+    hour = datetime.fromtimestamp(now_ts, STORE_TZ).hour
+    if QUIET_START < QUIET_END:
+        return QUIET_START <= hour < QUIET_END
+    return hour >= QUIET_START or hour < QUIET_END   # window crosses midnight
+
+
+def recently_contacted(db, phone: str, cart_token: str, now_ts: float) -> bool:
+    """
+    True when this phone already received a recovery message for a DIFFERENT
+    cart inside the cooldown window. Messages within one cart's own sequence are
+    not cooldown-limited; the stage delays already space those out.
+    """
+    if COOLDOWN_DAYS <= 0:
+        return False
+    row = db.execute(
+        """
+        SELECT 1 FROM recovery_sends
+        WHERE  phone = ? AND cart_token != ? AND sent_at > ?
+        LIMIT  1
+        """,
+        (phone, cart_token, now_ts - COOLDOWN_DAYS * 86400),
+    ).fetchone()
+    return row is not None
+
+
+def has_purchased(db, phone: str, since_ts: float) -> bool:
+    """True when this phone completed an order after the cart was created."""
+    row = db.execute(
+        "SELECT 1 FROM completed_orders WHERE phone = ? AND completed_at >= ? LIMIT 1",
+        (phone, since_ts),
+    ).fetchone()
+    return row is not None
+
+
+# ── Sending ───────────────────────────────────────────────────────────────────
+
+def send_stage(db, cart, stage: int, template: str, language: str, now_ts: float) -> None:
+    """Send one stage of the sequence and record it. Raises on failure."""
+    phone = cart["phone"]
+    body_params = [first_name_of(cart["name"]), format_products(cart["products"])]
+    suffix = checkout_button_suffix(cart["checkout_url"])
+
+    response = send_template(
+        phone,
+        template,
+        body_params,
+        language=language,
+        button_params=[suffix],
+    )
+    message_id = (response.get("messages") or [{}])[0].get("id")
+
+    db.execute(
+        """
+        UPDATE abandoned_carts
+        SET    stage = ?, last_sent_at = ?, message_sent_at = ?, status = ?
+        WHERE  token = ?
+        """,
+        (stage, now_ts, now_ts, "done" if stage >= FINAL_STAGE else "pending", cart["token"]),
+    )
+    db.execute(
+        """
+        INSERT INTO recovery_sends (phone, cart_token, stage, template, message_id, sent_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (phone, cart["token"], stage, template, message_id, now_ts),
+    )
+    db.commit()
+    print(f"[cart_recovery] Cart {cart['token']}: stage {stage} ({template}) sent to {phone}.")
+
+
+def process_cart(db, cart, now_ts: float, language: str) -> None:
+    """Evaluate one cart and send its next message if every check passes."""
+    token = cart["token"]
+    stage = cart["stage"] or 0
+
+    def mark(status: str, reason: str) -> None:
+        db.execute("UPDATE abandoned_carts SET status = ? WHERE token = ?", (status, token))
+        db.commit()
+        print(f"[cart_recovery] Cart {token}: {reason} → status={status}.")
+
+    if not cart["phone"]:
+        return mark("no_phone", "no usable phone number")
+
+    if not checkout_button_suffix(cart["checkout_url"]):
+        return mark("no_url", "no usable checkout URL — refusing to send a dead end")
+
+    if REQUIRE_OPT_IN and not cart["accepts_marketing"]:
+        return mark("no_opt_in", "customer did not consent to marketing messages")
+
+    if has_purchased(db, cart["phone"], cart["created_at"] or 0):
+        return mark("converted", "customer already purchased")
+
+    next_stage, delay, config_key, fallback = STAGES[stage]
+
+    # The clock runs from abandonment for stage 1 and from the previous message
+    # afterwards, so a backlog never fires three messages back to back.
+    reference = cart["created_at"] if stage == 0 else (cart["last_sent_at"] or cart["created_at"])
+    previous_delay = 0 if stage == 0 else STAGES[stage - 1][1]
+    if now_ts - reference < delay - previous_delay:
+        return
+
+    if recently_contacted(db, cart["phone"], token, now_ts):
+        return mark("skipped_cooldown", f"phone contacted within {COOLDOWN_DAYS:g} days")
+
+    send_stage(db, cart, next_stage, get_config(db, config_key, fallback), language, now_ts)
+
+
+# ── Core loop ─────────────────────────────────────────────────────────────────
 
 def process_pending_recoveries() -> None:
-    """
-    Infinite loop checking abandoned carts every 60 seconds.
-
-    Pass 1 — status='pending', older than 45 min:
-      - No phone → mark no_phone
-      - Returning customer (has completed order) → send TEMPLATE_RETURNING, mark sent_followup_pending
-      - First-time buyer → send TEMPLATE_FIRST_TIME, mark sent
-
-    Pass 2 — status='sent_followup_pending', message_sent_at older than 24 h:
-      - Send TEMPLATE_FOLLOWUP, mark sent
-    """
-    print("[cart_recovery] Recovery scheduler started.")
+    """Poll for carts due a message until the process exits."""
+    print(
+        f"[cart_recovery] Scheduler started — quiet {QUIET_START}:00-{QUIET_END}:00, "
+        f"cooldown {COOLDOWN_DAYS:g}d, opt-in required={REQUIRE_OPT_IN}, domain {STORE_DOMAIN}."
+    )
 
     while True:
         try:
-            now = time.time()
-            db  = get_db()
+            now_ts = time.time()
+
+            if within_quiet_hours(now_ts):
+                time.sleep(POLL_INTERVAL)
+                continue
+
+            db = get_db()
             try:
-                # ── Pass 1: first message ─────────────────────────────────
-                pending = db.execute(
+                language = get_config(db, "cart_template_lang", "es")
+                due = db.execute(
                     """
-                    SELECT token, phone, name, products
+                    SELECT token, phone, name, products, checkout_url, created_at,
+                           stage, last_sent_at, accepts_marketing
                     FROM   abandoned_carts
-                    WHERE  status = 'pending'
-                    AND    created_at < ?
+                    WHERE  status = 'pending' AND COALESCE(stage, 0) < ?
+                    ORDER  BY created_at
+                    LIMIT  200
                     """,
-                    (now - RECOVERY_DELAY,),
+                    (FINAL_STAGE,),
                 ).fetchall()
 
-                print(f"[cart_recovery] Checking pending carts — found {len(pending)} eligible.")
-
-                for row in pending:
-                    token = row["token"]
-                    phone = row["phone"]
-
+                for cart in due:
                     try:
-                        if not phone:
-                            db.execute("UPDATE abandoned_carts SET status='no_phone' WHERE token=?", (token,))
-                            db.commit()
-                            continue
-
-                        products_text = format_products(row["products"])
-                        completed = db.execute(
-                            "SELECT 1 FROM completed_orders WHERE phone=? LIMIT 1", (phone,)
-                        ).fetchone()
-
-                        if completed:
-                            # Returning customer — sin parámetros de body
-                            send_template(phone, TEMPLATE_RETURNING, [])
-                            db.execute(
-                                "UPDATE abandoned_carts SET status='sent_followup_pending', message_sent_at=? WHERE token=?",
-                                (now, token),
-                            )
-                            print(f"[cart_recovery] Cart {token}: returning customer template sent to {phone}.")
-                        else:
-                            # First-time buyer — sin parámetros de body
-                            send_template(phone, TEMPLATE_FIRST_TIME, [])
-                            db.execute(
-                                "UPDATE abandoned_carts SET status='sent', message_sent_at=? WHERE token=?",
-                                (now, token),
-                            )
-                            print(f"[cart_recovery] Cart {token}: first-time template sent to {phone}.")
-
-                        db.commit()
-
+                        process_cart(db, cart, now_ts, language)
                     except Exception as exc:
-                        print(f"[cart_recovery] ERROR processing cart {token}: {exc}")
+                        print(f"[cart_recovery] ERROR on cart {cart['token']}: {exc}")
                         try:
-                            db.execute("UPDATE abandoned_carts SET status='error' WHERE token=?", (token,))
+                            # PostgreSQL aborts the transaction on a failed
+                            # statement; clear it before recording the failure.
+                            db.rollback()
+                            db.execute(
+                                "UPDATE abandoned_carts SET status = 'error' WHERE token = ?",
+                                (cart["token"],),
+                            )
                             db.commit()
                         except Exception:
                             pass
-
-                # ── Pass 2: follow-up for returning customers ─────────────
-                followups = db.execute(
-                    """
-                    SELECT token, phone, name, checkout_url
-                    FROM   abandoned_carts
-                    WHERE  status = 'sent_followup_pending'
-                    AND    message_sent_at < ?
-                    """,
-                    (now - FOLLOWUP_DELAY,),
-                ).fetchall()
-
-                for row in followups:
-                    token      = row["token"]
-                    phone      = row["phone"]
-                    try:
-                        checkout_url = row["checkout_url"] if "checkout_url" in row.keys() else ""
-                        send_template(phone, TEMPLATE_FOLLOWUP, [], button_params=[checkout_url] if checkout_url else None)
-                        db.execute(
-                            "UPDATE abandoned_carts SET status='sent', message_sent_at=? WHERE token=?",
-                            (now, token),
-                        )
-                        db.commit()
-                        print(f"[cart_recovery] Cart {token}: follow-up template sent to {phone}.")
-                    except Exception as exc:
-                        print(f"[cart_recovery] ERROR sending follow-up for cart {token}: {exc}")
-
             finally:
                 db.close()
 
         except Exception as loop_exc:
             print(f"[cart_recovery] ERROR in recovery loop: {loop_exc}")
 
-        time.sleep(60)
+        time.sleep(POLL_INTERVAL)
 
 
 # ── Scheduler bootstrap ───────────────────────────────────────────────────────
 
-CART_RECOVERY_ENABLED = True
+def _skip_stale_pending() -> None:
+    """
+    Drop carts too old to be worth recovering, once at startup.
 
-
-def _skip_accumulated_pending() -> None:
-    """Mark all currently-pending carts as 'skipped' so they are never sent.
-    Called once at startup to flush the backlog without sending messages."""
+    The previous version skipped EVERY pending cart on every boot, which on
+    Railway meant each redeploy threw away carts abandoned minutes earlier. It
+    existed to stop a mass send when a backlog built up, so the backlog defence
+    is kept — bounded by age instead of catching everything.
+    """
+    cutoff = time.time() - SKIP_BACKLOG_AFTER
     db = get_db()
     try:
         result = db.execute(
-            "UPDATE abandoned_carts SET status='skipped' WHERE status='pending'"
+            "UPDATE abandoned_carts SET status = 'skipped' WHERE status = 'pending' AND created_at < ?",
+            (cutoff,),
         )
         db.commit()
-        print(f"[cart_recovery] Skipped {result.rowcount} accumulated pending cart(s).")
+        print(
+            f"[cart_recovery] Skipped {result.rowcount} cart(s) older than "
+            f"{SKIP_BACKLOG_AFTER / 3600:g}h; newer ones kept."
+        )
     except Exception as exc:
-        print(f"[cart_recovery] WARNING: could not skip pending carts: {exc}")
+        print(f"[cart_recovery] WARNING: could not skip stale carts: {exc}")
     finally:
         db.close()
 
 
 def start_recovery_scheduler() -> None:
     """
-    Start the abandoned-cart recovery loop in a background daemon thread.
-    Call this once during application startup (e.g. FastAPI lifespan handler).
+    Start the recovery loop in a background daemon thread.
+
+    Does nothing unless CART_RECOVERY_ENABLED is truthy, so the service can be
+    deployed and tested without messaging a single customer.
     """
-    if not CART_RECOVERY_ENABLED:
-        print("[cart_recovery] Scheduler disabled — CART_RECOVERY_ENABLED=False.")
+    if not ENABLED:
+        print("[cart_recovery] DISABLED — set CART_RECOVERY_ENABLED=true to arm it.")
         return
-    _skip_accumulated_pending()
+
+    _skip_stale_pending()
     thread = threading.Thread(
         target=process_pending_recoveries,
         name="cart-recovery-scheduler",
         daemon=True,
     )
     thread.start()
-    print(f"[cart_recovery] Daemon thread '{thread.name}' launched (pid-agnostic).")
+    print(f"[cart_recovery] Daemon thread '{thread.name}' launched.")
