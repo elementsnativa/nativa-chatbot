@@ -42,6 +42,7 @@ Environment variables:
   QUIET_END_HOUR          hour messaging resumes, 0-23           (default: 9)
   RECOVERY_COOLDOWN_DAYS  days before re-contacting a phone      (default: 14)
   SKIP_BACKLOG_HOURS      age past which a cart is dropped       (default: 6)
+  RECOVERY_STAGES         how many of the 3 stages to run        (default: 3)
 
 Call start_recovery_scheduler() once at app startup.
 """
@@ -84,11 +85,17 @@ except Exception:  # pragma: no cover — no tzdata on a slim image
     print("[cart_recovery] WARNING: timezone unavailable, quiet hours disabled.")
 
 # (stage number, delay since abandonment, bot_config key, fallback template name)
-STAGES: list[tuple[int, int, str, str]] = [
+_ALL_STAGES: list[tuple[int, int, str, str]] = [
     (1,  1 * 3600, "cart_stage1_template", "carrito_abandonado"),
     (2, 24 * 3600, "cart_stage2_template", "carrito_24h"),
     (3, 72 * 3600, "cart_stage3_template", "carrito_72h"),
 ]
+
+# How many stages to actually run. A stage whose template is not yet approved
+# would fail every send and park the cart in 'error', so the sequence can be
+# shortened while a template is still in review and lengthened later without a
+# deploy.
+STAGES = _ALL_STAGES[: max(1, min(int(os.getenv("RECOVERY_STAGES", "3")), len(_ALL_STAGES)))]
 FINAL_STAGE = STAGES[-1][0]
 
 _WHITESPACE = re.compile(r"\s+")
@@ -276,7 +283,8 @@ def process_cart(db, cart, now_ts: float, language: str) -> None:
 def process_pending_recoveries() -> None:
     """Poll for carts due a message until the process exits."""
     print(
-        f"[cart_recovery] Scheduler started — quiet {QUIET_START}:00-{QUIET_END}:00, "
+        f"[cart_recovery] Scheduler started — {len(STAGES)} stage(s), "
+        f"quiet {QUIET_START}:00-{QUIET_END}:00, "
         f"cooldown {COOLDOWN_DAYS:g}d, opt-in required={REQUIRE_OPT_IN}, domain {STORE_DOMAIN}."
     )
 
