@@ -250,6 +250,7 @@ def admin_cart_test(phone: str, secret: str = "", stage: int = 1,
             "sent": False, "dry_run": True, "to": to, "template": template,
             "language": language, "body_params": body_params, "button": "cart",
             "preview": f"Hola {body_params[0]}, dejaste {body_params[1]} en tu carrito.",
+            "cooldown_seconds": CART_TEST_COOLDOWN,
         }
 
     # A send behind a GET repeats itself: browsers prefetch links from the
