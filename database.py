@@ -6,6 +6,7 @@ Tables:
   - instagram_conversations
   - completed_orders
   - recovery_sends
+  - recovery_replies
 
 Uses DATABASE_URL env var (postgresql://...).
 DBWrapper mimics sqlite3's connection interface so routes need no changes.
@@ -105,6 +106,42 @@ def init_db() -> None:
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_recovery_sends_phone ON recovery_sends (phone, sent_at)"
+        )
+
+        # Delivery lifecycle, filled in from the WhatsApp status webhook, plus
+        # the click, which only exists when the button points at our redirect.
+        for column, ddl in (
+            ("delivered_at", "DOUBLE PRECISION"),
+            ("read_at", "DOUBLE PRECISION"),
+            ("failed_at", "DOUBLE PRECISION"),
+            ("error_code", "TEXT"),
+            ("clicked_at", "DOUBLE PRECISION"),
+            ("click_count", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            cur.execute(f"ALTER TABLE recovery_sends ADD COLUMN IF NOT EXISTS {column} {ddl}")
+
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_recovery_sends_msgid ON recovery_sends (message_id)"
+        )
+
+        # What customers write back after a recovery message. Their replies are
+        # the only qualitative read on whether the campaign lands.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recovery_replies (
+                id              BIGSERIAL PRIMARY KEY,
+                phone           TEXT NOT NULL,
+                cart_token      TEXT,
+                stage           INTEGER,
+                template        TEXT,
+                body            TEXT NOT NULL,
+                replied_at      DOUBLE PRECISION NOT NULL,
+                latency_seconds DOUBLE PRECISION
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_recovery_replies_at ON recovery_replies (replied_at)"
         )
 
         cur.execute(

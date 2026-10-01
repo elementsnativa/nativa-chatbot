@@ -5,6 +5,7 @@ Exports a single FastAPI router that combines:
   - chatbot.py   (Chatbot tab: knowledge + prompt)
   - flows.py     (Automatizaciones tab: ig_flows CRUD)
   - carritos.py  (Carritos tab: stats + template config)
+  - campanas.py  (Campañas tab: funnel, clicks, replies, template health)
 
 Mount via:
   from dashboard import router as dashboard_router
@@ -17,7 +18,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from ._shared import ADMIN_SECRET
-from . import chatbot, flows, carritos
+from . import chatbot, flows, carritos, campanas
 
 router = APIRouter()
 
@@ -35,3 +36,4 @@ def dashboard_page(secret: str = ""):
 router.include_router(chatbot.router)
 router.include_router(flows.router)
 router.include_router(carritos.router)
+router.include_router(campanas.router)

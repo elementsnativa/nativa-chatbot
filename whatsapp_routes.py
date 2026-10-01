@@ -28,6 +28,7 @@ from fastapi.responses import PlainTextResponse
 
 import crm
 import crm_media
+import cart_tracking
 from database import get_db
 from prompts import SYSTEM_PROMPT
 from shopify_tools import get_product_image, get_products_context
@@ -265,6 +266,12 @@ async def whatsapp_incoming(request: Request):
     except (KeyError, IndexError):
         return {"status": "ok"}
 
+    # Estados de entrega (delivered / read / failed) de los mensajes que enviamos.
+    # Llegan para todos, no solo los de carrito; cart_tracking ignora los que no
+    # correspondan a una campaña.
+    if value.get("statuses"):
+        await asyncio.to_thread(cart_tracking.record_statuses, value["statuses"])
+
     # Respuestas que el equipo envía desde la app WhatsApp Business (número en
     # coexistencia app + API): llegan como ecos y cuentan como respuesta humana.
     for echo in value.get("message_echoes") or []:
@@ -295,6 +302,14 @@ async def whatsapp_incoming(request: Request):
         customer={"phone": message["from"], "name": profile_name},
         needs_human=not WHATSAPP_BOT_ENABLED,
         attachments=files,
+    )
+
+    # Si este teléfono recibió un mensaje de carrito hace poco, su respuesta
+    # cuenta como respuesta al flow.
+    await asyncio.to_thread(
+        cart_tracking.record_reply,
+        message["from"], _wa_message_text(message),
+        float(message.get("timestamp") or time.time()),
     )
 
     if not WHATSAPP_BOT_ENABLED:

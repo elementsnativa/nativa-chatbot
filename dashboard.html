@@ -76,6 +76,28 @@ label { display: block; font-size: 12px; font-weight: 400; color: var(--muted); 
 .chat-input-row { display: flex; gap: 8px; }
 .chat-input-row input { flex: 1; }
 
+/* Campañas */
+.camp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.camp-table th { text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap; }
+.camp-table th:first-child, .camp-table td:first-child { text-align: left; }
+.camp-table td { text-align: right; padding: 10px; border-bottom: 1px solid #2d2d2d; white-space: nowrap; }
+.camp-table tbody tr:hover { background: rgba(255,255,255,.03); }
+.camp-stage { font-weight: 600; color: #9cdcfe; }
+.camp-rate { color: var(--accent); font-weight: 600; }
+.camp-zero { color: var(--muted); }
+.camp-scroll { overflow-x: auto; }
+.notice { border-radius: var(--radius); padding: 12px 14px; font-size: 12px; line-height: 1.5; margin-bottom: 16px; border: 1px solid; }
+.notice-warn { background: #332b00; border-color: #dcdcaa; color: #dcdcaa; }
+.notice-bad { background: #3a1d1d; border-color: var(--red); color: #f48771; }
+.notice-ok { background: #1e3a4f; border-color: var(--accent); color: var(--accent); }
+.reply-row { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; }
+.reply-head { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.reply-body { font-size: 13px; color: var(--text); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.health-row { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; }
+.health-name { font-weight: 600; color: #9cdcfe; font-size: 13px; }
+.health-url { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+.health-problem { color: #f48771; font-size: 12px; margin-top: 6px; }
+
 /* Flows table */
 .flows-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .flow-row { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
@@ -133,6 +155,7 @@ input:checked + .slider:before { transform: translateX(16px); background: #fff; 
     <button class="tab-btn active" onclick="switchTab('chatbot')">Chatbot</button>
     <button class="tab-btn" onclick="switchTab('flows')">Automatizaciones</button>
     <button class="tab-btn" onclick="switchTab('carritos')">Carritos</button>
+    <button class="tab-btn" onclick="switchTab('campanas')">Campañas</button>
   </nav>
 </header>
 
@@ -224,6 +247,59 @@ input:checked + .slider:before { transform: translateX(16px); background: #fff; 
 
     <div id="flows-list" class="flows-list">
       <div class="empty">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- ══ TAB 4: CAMPAÑAS ════════════════════════════════════════════════════ -->
+  <div id="tab-campanas" class="section">
+
+    <div class="row">
+      <h2>Rendimiento de recuperación de carritos</h2>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <select id="camp-days" onchange="loadCampaign()" style="background:#2d2d2d; color:var(--text); border:1px solid var(--border); border-radius:4px; padding:5px 8px; font-size:12px;">
+          <option value="7">Últimos 7 días</option>
+          <option value="30" selected>Últimos 30 días</option>
+          <option value="90">Últimos 90 días</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadCampaign()">↻ Actualizar</button>
+      </div>
+    </div>
+
+    <div id="camp-notice"></div>
+
+    <div id="camp-totals" class="stats-row">
+      <div class="stat-card"><div class="stat-num" id="camp-sent">—</div><div class="stat-label">Enviados</div></div>
+      <div class="stat-card"><div class="stat-num" id="camp-read">—</div><div class="stat-label">Leídos</div></div>
+      <div class="stat-card"><div class="stat-num" id="camp-clicked">—</div><div class="stat-label">Clics</div></div>
+      <div class="stat-card"><div class="stat-num" id="camp-replies">—</div><div class="stat-label">Respuestas</div></div>
+      <div class="stat-card"><div class="stat-num" id="camp-conv">—</div><div class="stat-label">Compras</div></div>
+      <div class="stat-card"><div class="stat-num" id="camp-convrate">—</div><div class="stat-label">Conversión</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Embudo por etapa</div>
+      <div class="camp-scroll">
+        <table class="camp-table">
+          <thead>
+            <tr>
+              <th>Etapa</th><th>Enviados</th><th>Entregados</th><th>Leídos</th>
+              <th>% leído</th><th>Clics</th><th>% clic</th><th>Respuestas</th>
+              <th>Compras</th><th>% conv.</th><th>Horas a comprar</th><th>Fallidos</th>
+            </tr>
+          </thead>
+          <tbody id="camp-rows"><tr><td colspan="12" class="empty">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mt-16">
+      <div class="card-title">Salud de las plantillas</div>
+      <div id="camp-health"><div class="empty">Cargando...</div></div>
+    </div>
+
+    <div class="card mt-16">
+      <div class="card-title">Qué responden al flow</div>
+      <div id="camp-replies-list"><div class="empty">Cargando...</div></div>
     </div>
   </div>
 
@@ -319,6 +395,7 @@ function switchTab(name) {
   if (name === 'chatbot') { loadKnowledge(); loadPrompt(); }
   if (name === 'flows') loadFlows();
   if (name === 'carritos') { loadCartStats(); loadCartConfig(); loadWabaTemplates(); }
+  if (name === 'campanas') loadCampaign();
 }
 
 // ── Tab 1: Chatbot ────────────────────────────────────────────────────────────
@@ -534,6 +611,96 @@ function saveCartConfig() {
     body: JSON.stringify(body)
   }).then(() => { toast('Templates guardados ✓'); loadCartConfig(); loadWabaTemplates(); })
     .catch(() => toast('Error al guardar', true));
+}
+
+// ── Tab 4: Campañas ───────────────────────────────────────────────────────────
+function pct(v) { return v === null || v === undefined ? '—' : v + '%'; }
+function num(v) { return v ? v : '<span class="camp-zero">0</span>'; }
+
+function loadCampaign() {
+  const days = document.getElementById('camp-days').value;
+
+  api('/api/dashboard/campaign-stats?days=' + days).then(d => {
+    const t = d.totals;
+    document.getElementById('camp-sent').textContent     = t.sent;
+    document.getElementById('camp-read').textContent     = t.read;
+    document.getElementById('camp-clicked').textContent  = d.click_tracking ? t.clicked : '—';
+    document.getElementById('camp-replies').textContent  = t.replies;
+    document.getElementById('camp-conv').textContent     = t.conversions;
+    document.getElementById('camp-convrate').textContent = pct(t.conversion_rate);
+
+    document.getElementById('camp-notice').innerHTML = d.click_tracking
+      ? '<div class="notice notice-ok">Medición de clics activa. Cada botón pasa por el redirect /c/ antes de llegar al checkout.</div>'
+      : '<div class="notice notice-warn"><strong>Los clics no se están midiendo.</strong> WhatsApp no informa cuando alguien toca el bot&oacute;n de una plantilla. Para medirlos, el bot&oacute;n tiene que apuntar a <code>https://tu-dominio/c/{{1}}</code> y hay que definir <code>CLICK_TRACKING_DOMAIN</code> en Railway. Mientras tanto, <strong>usá el % le&iacute;do como referencia</strong>.</div>';
+
+    const tbody = document.getElementById('camp-rows');
+    if (!d.stages.length) {
+      tbody.innerHTML = '<tr><td colspan="12" class="empty">Todavía no se enviaron mensajes en este período</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.stages.map(s => {
+      const horas = s.hours_to_convert_median !== null
+        ? s.hours_to_convert_median + ' h <span class="camp-zero">(med.)</span>' : '—';
+      return `<tr>
+        <td class="camp-stage">Etapa ${s.stage}</td>
+        <td>${s.sent}</td>
+        <td>${num(s.delivered)}</td>
+        <td>${num(s.read)}</td>
+        <td class="camp-rate">${pct(s.read_rate)}</td>
+        <td>${d.click_tracking ? num(s.clicked) : '—'}</td>
+        <td class="camp-rate">${d.click_tracking ? pct(s.click_rate) : '—'}</td>
+        <td>${num(s.replies)}</td>
+        <td>${num(s.conversions)}</td>
+        <td class="camp-rate">${pct(s.conversion_rate)}</td>
+        <td>${horas}</td>
+        <td>${s.failed ? '<span style="color:var(--red)">' + s.failed + '</span>' : num(0)}</td>
+      </tr>`;
+    }).join('');
+  }).catch(() => {
+    document.getElementById('camp-rows').innerHTML =
+      '<tr><td colspan="12" class="empty">Error al cargar las métricas</td></tr>';
+  });
+
+  api('/api/dashboard/template-health').then(d => {
+    const el = document.getElementById('camp-health');
+    if (d.error) { el.innerHTML = '<div class="notice notice-warn">' + d.error + '</div>'; return; }
+    if (!d.templates.length) { el.innerHTML = '<div class="empty">Sin plantillas configuradas</div>'; return; }
+    el.innerHTML = d.templates.map(t => `
+      <div class="health-row">
+        <div style="display:flex; gap:10px; align-items:center;">
+          <span class="health-name">${t.name}</span>
+          <span class="badge ${t.ok ? 'badge-on' : 'badge-off'}">${t.ok ? 'OK' : 'REVISAR'}</span>
+          <span class="camp-zero" style="font-size:11px">${t.config_key} · ${t.language || '—'}</span>
+        </div>
+        ${t.button_url ? '<div class="health-url">' + t.button_url.replace(/</g,'&lt;') + '</div>' : ''}
+        ${t.problems.map(pr => '<div class="health-problem">⚠ ' + pr + '</div>').join('')}
+      </div>`).join('');
+  }).catch(() => {
+    document.getElementById('camp-health').innerHTML = '<div class="empty">Error al verificar plantillas</div>';
+  });
+
+  api('/api/dashboard/campaign-replies?limit=50').then(d => {
+    const el = document.getElementById('camp-replies-list');
+    if (!d.replies.length) {
+      el.innerHTML = '<div class="empty">Todavía nadie respondió a un mensaje de carrito</div>';
+      return;
+    }
+    el.innerHTML = d.replies.map(r => {
+      const fecha = new Date(r.replied_at * 1000).toLocaleString('es-CL',
+        { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      return `<div class="reply-row">
+        <div class="reply-head">
+          <strong style="color:#9cdcfe">+${r.phone}</strong>
+          <span class="badge badge-off">Etapa ${r.stage ?? '?'}</span>
+          <span>${fecha}</span>
+          ${r.hours_after !== null ? '<span>· ' + r.hours_after + ' h después del mensaje</span>' : ''}
+        </div>
+        <div class="reply-body">${(r.body || '').replace(/</g,'&lt;')}</div>
+      </div>`;
+    }).join('');
+  }).catch(() => {
+    document.getElementById('camp-replies-list').innerHTML = '<div class="empty">Error al cargar respuestas</div>';
+  });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

@@ -176,6 +176,27 @@ def admin_resume(channel: str, contact_id: str, secret: str = ""):
     return {"status": "resumed", "channel": channel, "contact": contact_id}
 
 
+@app.get("/c/{token}")
+def cart_redirect(token: str):
+    """
+    Click-tracking redirect for cart recovery buttons.
+
+    WhatsApp never reports a tap on a URL button, so a click is only measurable
+    if the link goes through here first. Pointing a template's button at
+    https://<tracking domain>/c/{{1}} and passing the cart token makes the tap
+    observable; the customer just sees a redirect to their checkout.
+
+    Unknown tokens fall back to the cart page rather than erroring — a customer
+    who taps a real message must always land somewhere useful.
+    """
+    import cart_tracking
+    from fastapi.responses import RedirectResponse
+
+    fallback = f"https://{os.getenv('STORE_PUBLIC_DOMAIN', 'www.nativaelements.com')}/cart"
+    destination = cart_tracking.record_click(token) or fallback
+    return RedirectResponse(destination, status_code=302)
+
+
 @app.get("/admin/cart-test/{phone}")
 def admin_cart_test(phone: str, secret: str = "", stage: int = 1,
                     name: str = "Sebastián Pérez",

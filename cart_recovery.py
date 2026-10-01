@@ -43,6 +43,8 @@ Environment variables:
   RECOVERY_COOLDOWN_DAYS  days before re-contacting a phone      (default: 14)
   SKIP_BACKLOG_HOURS      age past which a cart is dropped       (default: 6)
   RECOVERY_STAGES         how many of the 3 stages to run        (default: 3)
+  CLICK_TRACKING_DOMAIN   domain of the /c/ redirect, enables
+                          click measurement                      (default: unset)
 
 Call start_recovery_scheduler() once at app startup.
 """
@@ -76,6 +78,12 @@ COOLDOWN_DAYS      = float(os.getenv("RECOVERY_COOLDOWN_DAYS", "14"))
 QUIET_START        = int(os.getenv("QUIET_START_HOUR", "21"))
 QUIET_END          = int(os.getenv("QUIET_END_HOUR", "9"))
 SKIP_BACKLOG_AFTER = float(os.getenv("SKIP_BACKLOG_HOURS", "6")) * 3600
+
+# When set, buttons are sent as "c/<cart token>" instead of the checkout path,
+# so the tap passes through /c/{token} and becomes measurable. The templates'
+# button base must then be https://<this domain>/{{1}} — a template approved
+# against the store domain keeps working unchanged while this is unset.
+CLICK_TRACKING_DOMAIN = os.getenv("CLICK_TRACKING_DOMAIN", "").strip().rstrip("/")
 POLL_INTERVAL      = 60
 
 try:
@@ -253,7 +261,10 @@ def send_stage(db, cart, stage: int, template: str, language: str, now_ts: float
     """Send one stage of the sequence and record it. Raises on failure."""
     phone = cart["phone"]
     body_params = [first_name_of(cart["name"]), format_products(cart["products"])]
-    suffix = checkout_button_suffix(cart["checkout_url"])
+    suffix = (
+        f"c/{cart['token']}" if CLICK_TRACKING_DOMAIN
+        else checkout_button_suffix(cart["checkout_url"])
+    )
 
     response = send_template(
         phone,
