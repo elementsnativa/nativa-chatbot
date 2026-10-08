@@ -147,4 +147,4 @@ def create_with_order_tool(client, **kwargs):
                 })
         messages.append({"role": "user", "content": results})
     text = "".join(b.text for b in response.content if b.type == "text").strip()
-    return text or "No pude revisar tu pedido en este momento. Escríbenos a sac@nativaelements.com y te ayudamos."
+    return text or "No pude revisar tu pedido en este momento. Escríbenos al WhatsApp +56 9 7700 2403 y te ayudamos."

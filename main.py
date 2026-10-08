@@ -344,7 +344,6 @@ async def chat(req: ChatRequest):
             return {
                 "reply": parsed["message"],
                 "action": "escalate",
-                "email": parsed["email"],
                 "whatsapp": WHATSAPP_CONTACT,
             }
     except (json.JSONDecodeError, KeyError):

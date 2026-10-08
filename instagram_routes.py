@@ -235,9 +235,8 @@ async def _debounced_reply_ig(psid: str) -> None:
         parsed = json.loads(reply)
         if parsed.get("action") == "escalate":
             escalate_text = (
-                f"{parsed.get('message', 'Para hablar con una persona de nuestro equipo, escríbenos a:')}\n"
-                f"Email: {EMAIL_CONTACT}\n"
-                f"WhatsApp: {WHATSAPP_CONTACT} (puede tardar más en ser contestado)"
+                f"{parsed.get('message', 'Para hablar con una persona de nuestro equipo, escríbenos por WhatsApp:')}\n"
+                f"WhatsApp: {WHATSAPP_CONTACT} (https://wa.me/56977002403)"
             )
             result = send_text(psid, escalate_text)
             _remember_bot_mid(result.get("message_id"))

@@ -202,8 +202,7 @@ async def _debounced_reply_wa(phone: str) -> None:
         parsed = json.loads(reply)
         if parsed.get("action") == "escalate":
             escalate_text = (
-                f"{parsed.get('message', 'Para hablar con una persona de nuestro equipo, escríbenos a:')}\n"
-                f"Email: {EMAIL_CONTACT}"
+                "Un miembro de nuestro equipo te responderá por este chat."
             )
             send_text(phone, escalate_text)
             crm.ingest("whatsapp", phone, "bot", escalate_text)

@@ -243,13 +243,13 @@
     card.innerHTML = `
       <p>${escapeHtml(text)}</p>
       <div class="nc-escalate-btns">
-        <a href="mailto:${escapeHtml(email)}?subject=Consulta%20Nativa%20Elements" class="nc-btn-mail">
+        ${email ? `<a href="mailto:${escapeHtml(email)}?subject=Consulta%20Nativa%20Elements" class="nc-btn-mail">
           <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
           ${escapeHtml(email)}
-        </a>
+        </a>` : ""}
         ${whatsapp ? `<a href="https://wa.me/${escapeHtml(whatsapp.replace(/\D/g, ""))}" target="_blank" rel="noopener" class="nc-btn-wa">
           <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.3 1.2-1.8 1.3-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.5-.6-2.7-1.2-4.4-3.9-4.6-4.1-.1-.2-1.1-1.4-1.1-2.7s.7-1.9.9-2.2c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.1.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.7 1.2 1.5 1.9 1 .9 1.9 1.2 2.2 1.3.3.1.4.1.6-.1l.8-1c.2-.3.4-.2.6-.1l1.9.9c.3.1.5.2.5.3.1.1.1.6-.1 1.3z"/></svg>
-          WhatsApp ${escapeHtml(whatsapp)} (puede tardar más)
+          WhatsApp ${escapeHtml(whatsapp)}
         </a>` : ""}
       </div>`;
     div.appendChild(card);
