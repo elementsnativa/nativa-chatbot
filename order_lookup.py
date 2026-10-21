@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 
 import requests
 
+import bluex
 from shopify_tools import API_VERSION, STORE_URL, _headers
 
 CYBER_START = date(2026, 10, 2)
@@ -82,7 +83,7 @@ def lookup_order(numero_pedido: str, nombre: str, today: date | None = None) -> 
             params={
                 "name": f"#NTVA{digits}",
                 "status": "any",
-                "fields": "name,created_at,cancelled_at,fulfillment_status,fulfillments,"
+                "fields": "name,created_at,cancelled_at,fulfillment_status,fulfillments,line_items,"
                           "customer,shipping_address,billing_address",
             },
             timeout=15,
@@ -109,6 +110,9 @@ def lookup_order(numero_pedido: str, nombre: str, today: date | None = None) -> 
         "cancelado": bool(order.get("cancelled_at")),
         "despachado": order.get("fulfillment_status") in ("fulfilled", "partial"),
     }
+    titles = [(item.get("title") or "").upper() for item in order.get("line_items") or []]
+    if any("COMPRESS" in t and "PREVENTA" in t for t in titles):
+        result["contiene_preventa_compress"] = True
     if es_cyber:
         limite = add_business_days(created, CYBER_BUSINESS_DAYS)
         result["plazo_despacho_hasta"] = limite.isoformat()
@@ -125,6 +129,10 @@ def lookup_order(numero_pedido: str, nombre: str, today: date | None = None) -> 
             result["link_seguimiento"] = urls[0]
         elif numbers:
             result["link_seguimiento"] = f"https://www.bluex.cl/seguimiento/?n_seguimiento={numbers[0]}"
+        if numbers:
+            status = bluex.get_shipment_status(numbers[0])
+            if status:
+                result["bluexpress"] = status
     return result
 
 

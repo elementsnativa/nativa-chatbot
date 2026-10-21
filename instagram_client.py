@@ -184,6 +184,14 @@ def send_text(recipient_id: str, text: str) -> dict:
     return data
 
 
+def send_typing(recipient_id: str) -> None:
+    """Muestra "escribiendo..." en el chat. Si falla, no interrumpe el envío."""
+    try:
+        _post({"recipient": {"id": recipient_id}, "sender_action": "typing_on"}, "typing", recipient_id)
+    except Exception:
+        pass
+
+
 def send_image(recipient_id: str, image_url: str) -> dict:
     """Send an image attachment via Instagram DM."""
     return _post(

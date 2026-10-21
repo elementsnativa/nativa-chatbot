@@ -111,6 +111,7 @@
       padding:10px 14px;background:#f1f3f5;
       border-radius:16px;border-bottom-left-radius:4px;width:fit-content;
     }
+    .nc-typing-label{font-size:12px;color:#999;margin-right:4px;font-style:italic}
     .nc-dot{width:7px;height:7px;border-radius:50%;background:#999;animation:nc-bounce .9s infinite}
     .nc-dot:nth-child(2){animation-delay:.15s}
     .nc-dot:nth-child(3){animation-delay:.30s}
@@ -260,7 +261,7 @@
   function showTyping() {
     var d = document.createElement("div");
     d.className = "nc-msg nc-bot"; d.id = "nc-typing";
-    d.innerHTML = '<div class="nc-typing"><div class="nc-dot"></div><div class="nc-dot"></div><div class="nc-dot"></div></div>';
+    d.innerHTML = '<div class="nc-typing"><span class="nc-typing-label">escribiendo</span><div class="nc-dot"></div><div class="nc-dot"></div><div class="nc-dot"></div></div>';
     msgs.appendChild(d); scrollDown();
   }
   function removeTyping() { var e = document.getElementById("nc-typing"); if(e) e.remove(); }
@@ -304,6 +305,9 @@
   function hideSuggestions() { suggsEl.innerHTML = ""; }
 
   /* ── Envío ───────────────────────────────────────────────────────────────── */
+  function wait(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+  function typingMs(part) { return Math.min(3000, 1500 + part.length * 8); }
+
   async function send(text) {
     text = text.trim();
     if (!text || loading) return;
@@ -315,6 +319,7 @@
     input.value = "";
     input.style.height = "auto";
     showTyping();
+    var startedAt = Date.now();
 
     try {
       var res = await fetch(API_URL + "/chat", {
@@ -329,16 +334,27 @@
       });
       if (!res.ok) throw new Error(res.status);
       var data = await res.json();
-      removeTyping();
 
       history.push({ role: "user", content: text });
 
       if (data.action === "escalate") {
+        await wait(Math.max(0, 2000 - (Date.now() - startedAt)));
+        removeTyping();
         addMessage("bot", data.reply);
         addEscalation(data.reply, data.email, data.whatsapp);
         history.push({ role: "assistant", content: data.reply });
       } else {
-        addMessage("bot", data.reply);
+        var parts = data.replies && data.replies.length ? data.replies : [data.reply];
+        for (var i = 0; i < parts.length; i++) {
+          if (i === 0) {
+            await wait(Math.max(0, typingMs(parts[0]) - (Date.now() - startedAt)));
+          } else {
+            showTyping();
+            await wait(typingMs(parts[i]));
+          }
+          removeTyping();
+          addMessage("bot", parts[i]);
+        }
         history.push({ role: "assistant", content: data.reply });
       }
       saveHistory();

@@ -10,6 +10,7 @@ from typing import Optional
 import anthropic
 from shopify_tools import get_products_context
 from order_lookup import create_with_order_tool
+from reply_format import split_reply
 from cart_recovery import start_recovery_scheduler
 from instagram_client import start_token_refresh_scheduler
 from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
@@ -349,4 +350,4 @@ async def chat(req: ChatRequest):
     except (json.JSONDecodeError, KeyError):
         pass
 
-    return {"reply": reply}
+    return {"reply": reply, "replies": split_reply(reply)}

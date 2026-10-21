@@ -24,10 +24,11 @@ from fastapi.responses import PlainTextResponse
 import crm
 import crm_media
 from database import get_db
-from instagram_client import VERIFY_TOKEN, get_profile, send_image, send_text
+from instagram_client import VERIFY_TOKEN, get_profile, send_image, send_text, send_typing
 from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
 from shopify_tools import get_product_image, get_products_context
 from order_lookup import create_with_order_tool
+from reply_format import split_reply, typing_seconds
 
 load_dotenv()
 
@@ -51,7 +52,7 @@ MAX_SENT_MIDS = 500
 
 _IG_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por Instagram Direct. "
-    "Respuestas cortas (máx 2-3 líneas). "
+    "Mensajes cortos, estilo chat. "
     "Sin markdown. "
     "Links simples."
 )
@@ -249,10 +250,13 @@ async def _debounced_reply_ig(psid: str) -> None:
         pass
 
     try:
-        result = send_text(psid, reply)
-        mid = result.get("message_id")
-        _remember_bot_mid(mid)
-        crm.ingest("instagram", psid, "bot", reply, external_id=mid and f"ig:{mid}")
+        for part in split_reply(reply):
+            await asyncio.to_thread(send_typing, psid)
+            await asyncio.sleep(typing_seconds(part))
+            result = send_text(psid, part)
+            mid = result.get("message_id")
+            _remember_bot_mid(mid)
+            crm.ingest("instagram", psid, "bot", part, external_id=mid and f"ig:{mid}")
     except Exception as exc:
         print(f"[instagram_routes] ERROR sending message to {psid}: {exc}")
 
