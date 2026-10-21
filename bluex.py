@@ -6,7 +6,7 @@ Se activa solo cuando están todas estas variables de entorno:
   BLUEX_TRACKING_URL    — URL base de Tracking Pull Corp; se le agrega /{tracking_number}
   BLUEX_CLIENT_ID, BLUEX_CLIENT_SECRET, BLUEX_API_KEY
 Opcionales (se envían como headers si existen):
-  BX_CLIENT_ACCOUNT, BX_TOKEN, BX_USERCODE
+  BX_CLIENT_ACCOUNT, BX_TOKEN, BX_USERNAME (o BX_USERCODE)
 
 Solo se devuelve el estado del envío: nunca direcciones ni datos del comprador.
 """
@@ -56,7 +56,8 @@ def _headers() -> dict:
         "x-api-key": _env("BLUEX_API_KEY"),
         "Accept": "application/json",
     }
-    for header, var in (("BX-CLIENT_ACCOUNT", "BX_CLIENT_ACCOUNT"), ("BX-TOKEN", "BX_TOKEN"), ("BX-USERCODE", "BX_USERCODE")):
+    for header, var in (("BX-CLIENT_ACCOUNT", "BX_CLIENT_ACCOUNT"), ("BX-TOKEN", "BX_TOKEN"),
+                        ("BX-USERNAME", "BX_USERNAME"), ("BX-USERCODE", "BX_USERCODE")):
         if _env(var):
             headers[header] = _env(var)
     return headers
@@ -69,7 +70,8 @@ def get_shipment_status(tracking_number: str) -> dict | None:
     try:
         url = f"{_env('BLUEX_TRACKING_URL').rstrip('/')}/{tracking_number}"
         resp = requests.get(url, headers=_headers(), timeout=15)
-        if resp.status_code == 401:
+        if resp.status_code in (401, 403):
+            # Token revocado o expirado: pedir uno nuevo y reintentar una vez
             _token["value"] = None
             resp = requests.get(url, headers=_headers(), timeout=15)
         resp.raise_for_status()
