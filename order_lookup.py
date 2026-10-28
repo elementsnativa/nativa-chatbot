@@ -1,14 +1,13 @@
 """
 order_lookup.py — Consulta de pedidos en Shopify para el chatbot (Cyber octubre 2026).
 
-El modelo llama a la herramienta `consultar_pedido` con número de pedido + nombre.
-Solo se devuelve información si el nombre coincide con el del pedido, y nunca se
+El modelo llama a la herramienta `consultar_pedido` con el número de pedido.
+Nunca se
 entregan direcciones, correos, teléfonos ni montos.
 """
 
 import json
 import re
-import unicodedata
 from datetime import date, datetime, timedelta
 
 import requests
@@ -31,34 +30,16 @@ TOOL = {
     "description": (
         "Busca un pedido de la tienda en Shopify para ver su fecha de compra, si es un "
         "pedido del Cyber, hasta qué fecha tiene plazo de despacho y si ya fue despachado. "
-        "Úsala solo cuando el cliente ya te dio su número de pedido Y su nombre."
+        "Úsala cuando el cliente te dio su número de pedido (ej: #NTVA13556)."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "numero_pedido": {"type": "string", "description": "Número de pedido, ej: NTVA1234 o 1234"},
-            "nombre": {"type": "string", "description": "Nombre del cliente tal como lo escribió"},
         },
-        "required": ["numero_pedido", "nombre"],
+        "required": ["numero_pedido"],
     },
 }
-
-
-def _normalize(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
-    return text.lower().strip()
-
-
-def _name_matches(given: str, order: dict) -> bool:
-    given_tokens = {t for t in re.split(r"\W+", _normalize(given)) if len(t) >= 3}
-    if not given_tokens:
-        return False
-    known = set()
-    for src in (order.get("customer"), order.get("shipping_address"), order.get("billing_address")):
-        if src:
-            for key in ("first_name", "last_name", "name"):
-                known |= {t for t in re.split(r"\W+", _normalize(src.get(key) or "")) if len(t) >= 3}
-    return bool(given_tokens & known)
 
 
 def add_business_days(start: date, days: int) -> date:
@@ -70,7 +51,7 @@ def add_business_days(start: date, days: int) -> date:
     return current
 
 
-def lookup_order(numero_pedido: str, nombre: str, today: date | None = None) -> dict:
+def lookup_order(numero_pedido: str, today: date | None = None) -> dict:
     today = today or date.today()
     digits = re.sub(r"\D", "", numero_pedido or "")
     if not digits:
@@ -83,8 +64,7 @@ def lookup_order(numero_pedido: str, nombre: str, today: date | None = None) -> 
             params={
                 "name": f"#NTVA{digits}",
                 "status": "any",
-                "fields": "name,created_at,cancelled_at,fulfillment_status,fulfillments,line_items,"
-                          "customer,shipping_address,billing_address",
+                "fields": "name,created_at,cancelled_at,fulfillment_status,fulfillments,line_items",
             },
             timeout=15,
         )
@@ -95,9 +75,8 @@ def lookup_order(numero_pedido: str, nombre: str, today: date | None = None) -> 
         return {"encontrado": False, "motivo": "error_sistema"}
 
     order = next((o for o in orders if re.sub(r"\D", "", o.get("name", "")) == digits), None)
-    if not order or not _name_matches(nombre, order):
-        # Mismo mensaje en ambos casos para no revelar si el pedido existe
-        return {"encontrado": False, "motivo": "no_coincide"}
+    if not order:
+        return {"encontrado": False, "motivo": "no_existe"}
 
     created = datetime.fromisoformat(order["created_at"]).date()
     es_cyber = CYBER_START <= created <= CYBER_END
@@ -147,7 +126,7 @@ def create_with_order_tool(client, **kwargs):
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                data = lookup_order(block.input.get("numero_pedido", ""), block.input.get("nombre", ""))
+                data = lookup_order(block.input.get("numero_pedido", ""))
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
