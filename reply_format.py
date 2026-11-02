@@ -1,16 +1,12 @@
-"""Separa la respuesta del modelo en 2-3 mensajes cortos, estilo chat."""
+"""Formato de la respuesta del bot: un solo mensaje, con párrafos separados por líneas en blanco."""
 
 import re
 
-MAX_PARTS = 3
-
 
 def split_reply(text: str) -> list[str]:
-    """Divide por líneas en blanco; si salen más de MAX_PARTS, junta el resto en el último."""
-    parts = [p.strip() for p in re.split(r"\n\s*\n", text or "") if p.strip()]
-    if len(parts) > MAX_PARTS:
-        parts = parts[:MAX_PARTS - 1] + ["\n".join(parts[MAX_PARTS - 1:])]
-    return parts or [text.strip()]
+    """Devuelve la respuesta como UN solo mensaje; colapsa saltos de línea extra entre párrafos."""
+    text = re.sub(r"\n\s*\n+", "\n\n", (text or "").strip())
+    return [text] if text else []
 
 
 def typing_seconds(part: str) -> float:

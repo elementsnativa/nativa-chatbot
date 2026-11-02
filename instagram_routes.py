@@ -52,7 +52,7 @@ MAX_SENT_MIDS = 500
 
 _IG_SYSTEM_SUFFIX = (
     "\n\nEstás respondiendo por Instagram Direct. "
-    "Mensajes cortos, estilo chat. "
+    "Un solo mensaje breve, en párrafos cortos separados por línea en blanco. "
     "Sin markdown. "
     "Links simples."
 )
