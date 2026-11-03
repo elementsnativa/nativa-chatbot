@@ -14,8 +14,9 @@ Environment variables:
   CRM_DATABASE_URL   — cadena de conexión Postgres de Supabase (si falta, el CRM queda apagado)
   CRM_API_SECRET     — secreto compartido con la web del CRM
   CRM_AI_MODEL       — modelo para clasificar tickets (por defecto claude-opus-5)
-  CRM_AI_CLASSIFY    — "1" para activar la clasificación automática de tickets con IA
-                       (por defecto apagada: cada ronda gastaba crédito de Anthropic)
+  CRM_AI_ENABLED     — "1" para activar la IA del CRM (clasificación automática de tickets
+                       y resumen /crm/insights). Por defecto apagada: es lo único del CRM
+                       que gasta crédito de Anthropic.
 
 Mount in main.py with:
     from crm import router as crm_router, start_crm_scheduler
@@ -40,7 +41,7 @@ load_dotenv()
 CRM_DATABASE_URL = (os.getenv("CRM_DATABASE_URL") or "").strip()
 CRM_API_SECRET = os.getenv("CRM_API_SECRET", "")
 CRM_AI_MODEL = os.getenv("CRM_AI_MODEL", "claude-opus-5")
-CRM_AI_CLASSIFY = os.getenv("CRM_AI_CLASSIFY", "0").strip().lower() in ("1", "true", "si", "sí", "yes")
+CRM_AI_ENABLED = os.getenv("CRM_AI_ENABLED", "0").strip().lower() in ("1", "true", "si", "sí", "yes")
 
 CLASSIFY_INTERVAL = 120     # segundos entre rondas de clasificación IA
 AUTOCLOSE_INTERVAL = 600    # segundos entre cierres automáticos
@@ -362,8 +363,8 @@ def start_crm_scheduler() -> None:
         print("[crm] CRM_DATABASE_URL not set — CRM integration disabled.")
         return
     from crm_gmail import poll_gmail, gmail_enabled, POLL_INTERVAL
-    if not CRM_AI_CLASSIFY:
-        print("[crm] Clasificación IA de tickets apagada (CRM_AI_CLASSIFY=1 para activarla).")
+    if not CRM_AI_ENABLED:
+        print("[crm] IA del CRM apagada: sin clasificación ni insights (CRM_AI_ENABLED=1 para activarla).")
 
     def loop():
         last = {"gmail": 0.0, "classify": 0.0, "autoclose": 0.0, "profiles": 0.0}
@@ -371,7 +372,7 @@ def start_crm_scheduler() -> None:
             now = time.time()
             jobs = [
                 ("gmail", POLL_INTERVAL, poll_gmail if gmail_enabled() else None),
-                ("classify", CLASSIFY_INTERVAL, classify_pending if CRM_AI_CLASSIFY else None),
+                ("classify", CLASSIFY_INTERVAL, classify_pending if CRM_AI_ENABLED else None),
                 ("autoclose", AUTOCLOSE_INTERVAL, autoclose),
                 ("profiles", AUTOCLOSE_INTERVAL, fill_instagram_profiles),
             ]
@@ -495,6 +496,11 @@ Usa solo lo que está en los datos. Sé específico y accionable; nada de rellen
 @router.post("/crm/insights")
 def crm_insights(req: InsightRequest, x_crm_secret: str | None = Header(default=None)):
     _check_secret(x_crm_secret)
+    if not CRM_AI_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="La IA del CRM está pausada para no gastar crédito de Anthropic (CRM_AI_ENABLED=1 en Railway para reactivarla).",
+        )
     start, end = req.start, req.end
     if end < start or (end - start).days > 400:
         raise HTTPException(status_code=400, detail="Rango de fechas inválido")
