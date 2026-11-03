@@ -72,7 +72,7 @@ Todos los `/crm/*` exigen el header **`X-CRM-Secret: <CRM_API_SECRET>`** (el mis
 | Tarea | Cada | Qué hace |
 |---|---|---|
 | Gmail | 60 s | Trae correos de los últimos 2 días que aún no están (`poll_gmail`). Solo si existe `GMAIL_SERVICE_ACCOUNT_JSON`. |
-| Clasificación | 120 s | Hasta 20 tickets con mensajes nuevos: Claude (`CRM_AI_MODEL`, por defecto `claude-opus-5`) devuelve motivo, responsable, solución, sentimiento, estado sugerido y resumen. **No toca los campos en `tickets.manual_fields`** (lo que SAC editó a mano manda). |
+| Clasificación | 120 s | **Apagada por defecto** (se activa con `CRM_AI_CLASSIFY=1`). Hasta 20 tickets con mensajes nuevos: Claude (`CRM_AI_MODEL`, por defecto `claude-opus-5`) devuelve motivo, responsable, solución, sentimiento, estado sugerido y resumen. **No toca los campos en `tickets.manual_fields`** (lo que SAC editó a mano manda). |
 | Cierre automático | 10 min | Tickets atendidos solo por el bot → resueltos a las 48 h; resueltos → cerrados a los 7 días (`crm_autoclose()`). |
 | Perfiles Instagram | 10 min | Completa nombre/@usuario de clientes que entraron sin ellos. |
 
@@ -90,6 +90,7 @@ Solo nombres. Los valores se entregan aparte, nunca en el repo.
 | `CRM_DATABASE_URL` | Postgres de Supabase, **Session pooler** (puerto 5432; Railway no siempre soporta la conexión directa IPv6). Sin ella, el CRM queda apagado. |
 | `CRM_API_SECRET` | Secreto compartido con la web del CRM (`X-CRM-Secret`). |
 | `CRM_AI_MODEL` | Opcional. Modelo de Claude para clasificar e insights. |
+| `CRM_AI_CLASSIFY` | Opcional. `1` para activar la clasificación automática de tickets con Claude. Por defecto apagada (desde nov-2026) porque era la mayor fuente de gasto de la API key; `/crm/insights` sigue disponible a demanda. |
 | `GMAIL_SERVICE_ACCOUNT_JSON` | JSON completo (una línea) de la cuenta de servicio `crm-gmail@nativa-sac.iam.gserviceaccount.com`. |
 | `GMAIL_SAC_ADDRESS` | Opcional. Casilla a leer; por defecto `sac@nativaelements.com`. |
 | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | Para subir fotos a Storage. Sin ellas, los adjuntos de WhatsApp/Instagram quedan solo como "[imagen]". |
@@ -133,7 +134,7 @@ Detalles útiles:
   (así no se crean tickets por correos a proveedores). La lista de remitentes ignorados está en `_IGNORE_ADDRESSES`.
   El historial completo (desde nov-2025) ya está importado; `import_history()` es idempotente.
 - **El debounce de respuestas** (10 s en Instagram) vive en memoria: un redeploy en ese intervalo pierde la respuesta pendiente del bot.
-- **Costos de Claude:** la clasificación usa `claude-opus-5` por defecto. Para bajar costo, `CRM_AI_MODEL=claude-sonnet-5` o `claude-haiku-4-5`.
+- **Costos de Claude:** la clasificación automática está apagada por defecto (`CRM_AI_CLASSIFY=1` la enciende). Si se activa, usa `claude-opus-5`; para bajar costo, `CRM_AI_MODEL=claude-sonnet-5` o `claude-haiku-4-5`.
 
 ## Pendientes
 
