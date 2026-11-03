@@ -30,7 +30,7 @@ import crm
 import crm_media
 import cart_tracking
 from database import get_db
-from prompts import SYSTEM_PROMPT
+from prompts import SYSTEM_PROMPT, system_block, log_usage
 from shopify_tools import get_product_image, get_products_context
 from whatsapp_client import VERIFY_TOKEN, normalize_phone, send_image, send_text
 
@@ -172,9 +172,10 @@ async def _debounced_reply_wa(phone: str) -> None:
         response = _anthropic.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=300,
-            system=system,
+            system=system_block(system),
             messages=messages,
         )
+        log_usage("whatsapp", response)
         reply: str = response.content[0].text.strip()
     except Exception as exc:
         print(f"[whatsapp_routes] ERROR calling Claude for {phone}: {exc}")

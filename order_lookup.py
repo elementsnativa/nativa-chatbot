@@ -7,6 +7,7 @@ entregan direcciones, correos, teléfonos ni montos.
 """
 
 import json
+from prompts import log_usage
 import re
 from datetime import date, datetime, timedelta
 
@@ -120,6 +121,7 @@ def create_with_order_tool(client, **kwargs):
     messages = list(kwargs.pop("messages"))
     for _ in range(3):
         response = client.messages.create(tools=[TOOL], messages=messages, **kwargs)
+        log_usage("chat+pedidos", response)
         if response.stop_reason != "tool_use":
             break
         messages.append({"role": "assistant", "content": response.content})

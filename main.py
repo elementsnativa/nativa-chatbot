@@ -17,7 +17,7 @@ from whatsapp_routes import router as whatsapp_router, _set_whatsapp_takeover
 from instagram_routes import router as instagram_router
 from dashboard import router as dashboard_router
 from crm import router as crm_router, start_crm_scheduler
-from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
+from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT, system_block
 from database import get_db
 
 load_dotenv()
@@ -335,7 +335,7 @@ async def chat(req: ChatRequest):
         _client,
         model="claude-haiku-4-5-20251001",
         max_tokens=400,
-        system=system,
+        system=system_block(system),
         messages=messages,
     )
 

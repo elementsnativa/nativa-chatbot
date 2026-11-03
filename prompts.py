@@ -153,3 +153,25 @@ Responde ÚNICAMENTE:
 ━━ CATÁLOGO ACTUAL (con URLs) ━━
 {{products}}
 """ + _load_knowledge()
+
+
+def system_block(text: str) -> list[dict]:
+    """System prompt como bloque cacheable (prompt caching).
+
+    El texto es idéntico entre mensajes mientras no cambie el catálogo (se
+    refresca cada 30 min), así que la caché acierta en toda conversación con
+    más de un mensaje y las lecturas cuestan un 10% del precio normal. No
+    poner nada variable acá (fecha, nombre del cliente): invalidaría la caché.
+    """
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+
+
+def log_usage(tag: str, response) -> None:
+    """Deja en el log cuánto se leyó desde caché; sirve para verificar el ahorro en Railway."""
+    u = getattr(response, "usage", None)
+    if u is None:
+        return
+    print(
+        f"[claude:{tag}] in={u.input_tokens} cache_read={getattr(u, 'cache_read_input_tokens', 0) or 0} "
+        f"cache_write={getattr(u, 'cache_creation_input_tokens', 0) or 0} out={u.output_tokens}"
+    )

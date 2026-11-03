@@ -25,7 +25,7 @@ import crm
 import crm_media
 from database import get_db
 from instagram_client import VERIFY_TOKEN, get_profile, send_image, send_text, send_typing
-from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT
+from prompts import SYSTEM_PROMPT, WHATSAPP_CONTACT, system_block
 from shopify_tools import get_product_image, get_products_context
 from order_lookup import create_with_order_tool
 from reply_format import split_reply, typing_seconds
@@ -207,7 +207,7 @@ async def _debounced_reply_ig(psid: str) -> None:
             _anthropic,
             model="claude-haiku-4-5-20251001",
             max_tokens=300,
-            system=system,
+            system=system_block(system),
             messages=messages,
         )
     except Exception as exc:

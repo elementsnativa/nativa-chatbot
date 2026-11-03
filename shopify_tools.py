@@ -71,11 +71,11 @@ def get_products_context() -> str:
             else:
                 tallas = "AGOTADO"
 
-            # Descripción limpia (sin HTML, máx 200 chars)
-            raw_desc = p.get("body_html") or ""
-            desc = re.sub(r"<[^>]+>", " ", raw_desc)
-            desc = re.sub(r"\s+", " ", desc).strip()[:200]
-            desc_part = f" | {desc}" if desc else ""
+            # Del body_html solo conservamos la referencia de talla. Antes se
+            # mandaban 200 chars de descripción por producto y en muchos casos
+            # era CSS de los bloques <style>: ~8.000 tokens por mensaje que el
+            # bot pagaba sin usar. Lo demás ya está en conocimiento.txt.
+            desc_part = _size_reference(p.get("body_html") or "")
 
             lines.append(
                 f"- {p['title']}: ${price:,.0f} CLP | {tallas}{desc_part} | {product_url}"
@@ -88,6 +88,18 @@ def get_products_context() -> str:
 
     except Exception as e:
         return f"[No se pudo cargar el catálogo: {e}]"
+
+
+def _size_reference(body_html: str) -> str:
+    """' | Referencia de talla: ...' si la descripción la trae; si no, cadena vacía."""
+    text = re.sub(r"<(style|script)[^>]*>.*?</\1>", " ", body_html, flags=re.S | re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    m = re.search(r"Referencia de talla:\s*(.{0,160}?)(?:\.\s|$)", text, flags=re.I)
+    if not m:
+        return ""
+    ref = m.group(1).strip().rstrip(".")
+    return f" | Referencia de talla: {ref}" if ref else ""
 
 
 def get_product_image(handle: str) -> str | None:
